@@ -32,3 +32,18 @@ func TestNewInceptionEvent(t *testing.T) {
 	}
 
 }
+
+func TestNext(t *testing.T) {
+	assert := assert.New(t)
+
+	d1, _ := derivation.FromPrefix("EmB26yMzroICh-opKNdkYyP000kwevU18WQI95JaJDjY")
+	d1p := prefix.New(d1)
+	d2, _ := derivation.FromPrefix("EO4CXp8gs0yJg1fFhJLs5hH6neqJwhFEY7vrJEdPe87I")
+	d2p := prefix.New(d2)
+	d3, _ := derivation.FromPrefix("ELWWZEyBpjrfM1UU0n31KIyIXllrCoLEOI5UHD9x7WxI")
+	d3p := prefix.New(d3)
+
+	event, err := NewEvent(WithType(ICP), WithNext(2, derivation.Blake3256, d1p, d2p, d3p))
+	assert.Nil(err)
+	assert.Equal("ED8YvDrXvGuaIVZ69XsBVA5YN2pNTfQOFwgeloVHeWKs", event.Next)
+}

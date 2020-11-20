@@ -17,6 +17,7 @@ import (
 // DerivationOption is a genric configuration function for derivations
 type DerivationOption func(*Derivation) error
 
+// WithCode allows you to provide a derviation code for the derivation
 func WithCode(code Code) DerivationOption {
 	return func(d *Derivation) error {
 		d.Code = code
@@ -29,11 +30,14 @@ func WithCode(code Code) DerivationOption {
 		if d.Code.SelfSigning() {
 			d.deriver = selfSigningDeriver(code)
 		}
+		if d.Code.AttachedSignature() {
+			d.deriver = attachedSignatureDeriver(code)
+		}
 		return nil
 	}
 }
 
-// Use the provided signing function to do the derivation
+// WithSigner uses the provided signing function to do the derivation
 func WithSigner(signer Signer) DerivationOption {
 	return func(d *Derivation) error {
 		d.deriver = deriver(signer)
@@ -41,6 +45,7 @@ func WithSigner(signer Signer) DerivationOption {
 	}
 }
 
+// WithRaw allows you to provide raw derivation data
 func WithRaw(data []byte) DerivationOption {
 	return func(d *Derivation) error {
 		d.Raw = data
@@ -52,13 +57,16 @@ func WithRaw(data []byte) DerivationOption {
 // raw data and returing the derived value
 type deriver func([]byte) ([]byte, error)
 
-// Derivation interface
+// Derivation
 type Derivation struct {
-	Code    Code    // The code for this derivation
-	deriver deriver // return the derived data of the input
-	Raw     []byte  // The Raw derived data
+	Code     Code    // The code for this derivation
+	deriver  deriver // return the derived data of the input
+	Raw      []byte  // The Raw derived data
+	KeyIndex uint16  // For Attached Signature Derivation - the index of the key for the signature
 }
 
+// Derive runs the derivation algorithm over the provided bytes
+// returning the derived data
 func (d *Derivation) Derive(data []byte) ([]byte, error) {
 	raw, err := d.deriver(data)
 	if err != nil {
@@ -70,8 +78,15 @@ func (d *Derivation) Derive(data []byte) ([]byte, error) {
 	return raw, nil
 }
 
+// AsPrefix returns the derivation's raw data as a base 64 encoded string with
+// the correct derivation code prepended
 func (d *Derivation) AsPrefix() string {
-	return string(append([]byte(d.Code.String()), base64.RawURLEncoding.EncodeToString(d.Raw)...))
+	dcode := []byte(d.Code.String())
+	if d.Code.AttachedSignature() {
+		indexBase64, _ := IndexToBase64(d.KeyIndex)
+		dcode = append(dcode[:1], indexBase64...)
+	}
+	return string(append(dcode, base64.RawURLEncoding.EncodeToString(d.Raw)...))
 }
 
 // New returns a derivation of the provided Code
@@ -103,7 +118,7 @@ func FromPrefix(data string) (*Derivation, error) {
 		if dc, ok := codeValue[data[:2]]; ok {
 			d, _ = New(WithCode(dc))
 			if len(data) != d.Code.PrefixBase64Length() {
-				return nil, fmt.Errorf("invalid prefix length (%b) for derevation %s", len(data), d.Code.Name())
+				return nil, fmt.Errorf("invalid prefix length (%d) for derevation %s", len(data), d.Code.Name())
 			}
 		} else {
 			return nil, fmt.Errorf("unable to determin derevation from code %s", data[:1])
@@ -113,7 +128,7 @@ func FromPrefix(data string) (*Derivation, error) {
 		if dc, ok := codeValue[data[:1]]; ok {
 			d, _ = New(WithCode(dc))
 			if len(data) != d.Code.PrefixBase64Length() {
-				return nil, fmt.Errorf("invalid prefix length (%b) for derevation %s", len(data), d.Code.Name())
+				return nil, fmt.Errorf("invalid prefix length (%d) for derevation %s", len(data), d.Code.Name())
 			}
 		} else {
 			return nil, fmt.Errorf("unable to determin derevation from code %s", data[:1])

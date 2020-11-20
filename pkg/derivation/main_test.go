@@ -172,3 +172,175 @@ func TestSelfAddressing(t *testing.T) {
 	assert.Nil(err)
 	assert.Equal([]byte(`asdf`), derived)
 }
+
+func TestFromString(t *testing.T) {
+	assert := assert.New(t)
+
+	blake3 := []byte(`Ftq3upkY_KoTFc0dJaZ_QRmU1Eb5-kEpcqHoGhzeSCk0`)
+	d, err := FromPrefix(string(blake3))
+	assert.Nil(err)
+	assert.Equal(blake3, []byte(d.AsPrefix()))
+}
+
+// func TestConvertion(t *testing.T) {
+// 	// assert := assert.New(t)
+
+// 	// prefixes := []map[string]string{
+// 	// 	{"basic": "BrHLayDN-mXKv62DAjFLX1_Y5yEUe0vA9YPe_ihiKYHE",
+// 	// 		"expected": "EmB26yMzroICh-opKNdkYyP000kwevU18WQI95JaJDjY",
+// 	// 	},
+// 	// 	{
+// 	// 		"basic":    "BujP_71bmWFVcvFmkE9uS8BTZ54GIstZ20nj_UloF8Rk",
+// 	// 		"expected": "EO4CXp8gs0yJg1fFhJLs5hH6neqJwhFEY7vrJEdPe87I",
+// 	// 	},
+// 	// 	{
+// 	// 		"basic":    "B8T4xkb8En6o0Uo5ZImco1_08gT5zcYnXzizUPVNzicw",
+// 	// 		"expected": "ELWWZEyBpjrfM1UU0n31KIyIXllrCoLEOI5UHD9x7WxI",
+// 	// 	},
+// 	// }
+
+// 	// for _, p := range prefixes {
+// 	// 	b, err := FromPrefix(p["basic"])
+// 	// 	if !assert.Nil(err) {
+// 	// 		continue
+// 	// 	}
+// 	// 	assert.True(b.Code.Basic())
+// 	// 	sa, _ := New(WithCode(Blake3256))
+// 	// 	_, err = sa.Derive(b.Raw)
+// 	// 	assert.Nil(err)
+// 	// 	assert.Equal(p["expected"], sa.AsPrefix())
+// 	// }
+// }
+
+func TestBase64IndexConverstion(t *testing.T) {
+	assert := assert.New(t)
+
+	_, err := IndexToBase64(4096)
+	assert.NotNil(err)
+
+	_, err = Base64ToIndex("ASDF")
+	assert.NotNil(err)
+
+	b64, err := IndexToBase64(1)
+	assert.Nil(err)
+	assert.Len(b64, 1)
+	assert.Equal("B", b64)
+
+	indexInt, err := Base64ToIndex(b64)
+	assert.Nil(err)
+	assert.Equal(uint16(1), indexInt)
+
+	b64, err = IndexToBase64(63)
+	assert.Nil(err)
+	assert.Len(b64, 1)
+	assert.Equal("_", b64)
+
+	indexInt, err = Base64ToIndex(b64)
+	assert.Nil(err)
+	assert.Equal(uint16(63), indexInt)
+
+	b64, err = IndexToBase64(256)
+	assert.Nil(err)
+	assert.Len(b64, 2)
+	assert.Equal("EA", b64)
+
+	indexInt, err = Base64ToIndex(b64)
+	assert.Nil(err)
+	assert.Equal(uint16(256), indexInt)
+
+	b64, err = IndexToBase64(4095)
+	assert.Nil(err)
+	assert.Len(b64, 2)
+	assert.Equal("__", b64)
+
+	indexInt, err = Base64ToIndex(b64)
+	assert.Nil(err)
+	assert.Equal(uint16(4095), indexInt)
+}
+
+func TestParseSignatureCount(t *testing.T) {
+	assert := assert.New(t)
+
+	_, err := ParseSignatureCount("noway")
+	assert.NotNil(err)
+
+	_, err = ParseSignatureCount("nono")
+	assert.NotNil(err)
+
+	count, err := ParseSignatureCount("-AAA")
+	assert.Nil(err)
+	assert.Equal(uint16(0), count)
+
+	count, err = ParseSignatureCount("-AAB")
+	assert.Nil(err)
+	assert.Equal(uint16(1), count)
+
+	count, err = ParseSignatureCount("-AEA")
+	assert.Nil(err)
+	assert.Equal(uint16(256), count)
+
+	count, err = ParseSignatureCount("-A__")
+	assert.Nil(err)
+	assert.Equal(uint16(4095), count)
+
+}
+
+func TestFromAttachedSignature(t *testing.T) {
+	assert := assert.New(t)
+
+	attachedED25519 := "ABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	attachedEcDSA := "BCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+
+	_, err := FromAttachedSignature("asdf")
+	assert.NotNil(err)
+
+	d, err := FromAttachedSignature(attachedED25519)
+	assert.Nil(err)
+	assert.Equal(uint16(1), d.KeyIndex)
+	assert.Equal(d.Code, Ed25519Attached)
+
+	d, err = FromAttachedSignature(attachedEcDSA)
+	assert.Nil(err)
+	assert.Equal(uint16(2), d.KeyIndex)
+	assert.Equal(d.Code, EcDSAAttached)
+}
+
+func TestParseAttachedSignatures(t *testing.T) {
+	assert := assert.New(t)
+	sigString := []byte("-AABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+
+	ders, extra, err := ParseAttachedSignatures(sigString)
+	assert.Nil(err)
+	assert.Empty(extra)
+	if assert.Len(ders, 1) {
+		assert.Equal(uint16(0), ders[0].KeyIndex)
+	}
+
+	sigString = []byte("-AACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+	ders, extra, err = ParseAttachedSignatures(sigString)
+	assert.Nil(err)
+	assert.Empty(extra)
+	if assert.Len(ders, 2) {
+		assert.Equal(uint16(0), ders[0].KeyIndex)
+		assert.Equal(uint16(1), ders[1].KeyIndex)
+	}
+
+	// Correctly return extra bytes
+	sigString = []byte("-AACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAsome extra data at the end")
+	ders, extra, err = ParseAttachedSignatures(sigString)
+	assert.Nil(err)
+	if assert.NotEmpty(extra) {
+		assert.Equal("some extra data at the end", string(extra))
+	}
+	assert.Len(ders, 2)
+
+	// Invalid derivation code for 3rd sig
+	sigString = []byte("-AADAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAsome extra data at the end")
+	_, _, err = ParseAttachedSignatures(sigString)
+	assert.NotNil(err)
+
+	// Valid derivation for 3 sig, but invalid data length
+	sigString = []byte("-AADAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAA")
+	_, _, err = ParseAttachedSignatures(sigString)
+	assert.NotNil(err)
+}

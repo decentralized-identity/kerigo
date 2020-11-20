@@ -6,9 +6,6 @@ import (
 	"github.com/decentralized-identity/kerigo/pkg/derivation"
 )
 
-/*
-Implements a base prefix functionality
-*/
 type base struct {
 	derivation *derivation.Derivation // the derivation
 }

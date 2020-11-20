@@ -23,6 +23,8 @@ const (
 	SHA3512
 	Blake2b512
 	SHA2512
+	Ed25519Attached
+	EcDSAAttached
 )
 
 var (
@@ -43,101 +45,113 @@ var (
 		"0E": SHA3512,
 		"0F": Blake2b512,
 		"0G": SHA2512,
+		"AX": Ed25519Attached,
+		"BX": EcDSAAttached,
 	}
 
 	codeString = map[Code]string{
-		Ed25519Seed:   "A",
-		Ed25519NT:     "B",
-		X25519:        "C",
-		Ed25519:       "D",
-		Blake3256:     "E",
-		Blake2b256:    "F",
-		Blake2s256:    "G",
-		SHA3256:       "H",
-		SHA2256:       "I",
-		RandomSeed128: "0A",
-		Ed25519Sig:    "0B",
-		EcDSASig:      "0C",
-		Blake3512:     "0D",
-		SHA3512:       "0E",
-		Blake2b512:    "0F",
-		SHA2512:       "0G",
+		Ed25519Seed:     "A",
+		Ed25519NT:       "B",
+		X25519:          "C",
+		Ed25519:         "D",
+		Blake3256:       "E",
+		Blake2b256:      "F",
+		Blake2s256:      "G",
+		SHA3256:         "H",
+		SHA2256:         "I",
+		RandomSeed128:   "0A",
+		Ed25519Sig:      "0B",
+		EcDSASig:        "0C",
+		Blake3512:       "0D",
+		SHA3512:         "0E",
+		Blake2b512:      "0F",
+		SHA2512:         "0G",
+		Ed25519Attached: "AX",
+		EcDSAAttached:   "BX",
 	}
 
 	codeName = map[Code]string{
-		Ed25519Seed:   "Ed25519Seed",
-		Ed25519NT:     "Ed25519NT",
-		X25519:        "X25519",
-		Ed25519:       "Ed25519",
-		Blake3256:     "Blake3256",
-		Blake2b256:    "Blake2b256",
-		Blake2s256:    "Blake2s256",
-		SHA3256:       "SHA3256",
-		SHA2256:       "SHA2256",
-		RandomSeed128: "RandomSeed128",
-		Ed25519Sig:    "Ed25519Sig",
-		EcDSASig:      "EcDSASig",
-		Blake3512:     "Blake3512",
-		SHA3512:       "SHA3512",
-		Blake2b512:    "Blake2b512",
-		SHA2512:       "SHA2512",
+		Ed25519Seed:     "Ed25519Seed",
+		Ed25519NT:       "Ed25519NT",
+		X25519:          "X25519",
+		Ed25519:         "Ed25519",
+		Blake3256:       "Blake3256",
+		Blake2b256:      "Blake2b256",
+		Blake2s256:      "Blake2s256",
+		SHA3256:         "SHA3256",
+		SHA2256:         "SHA2256",
+		RandomSeed128:   "RandomSeed128",
+		Ed25519Sig:      "Ed25519Sig",
+		EcDSASig:        "EcDSASig",
+		Blake3512:       "Blake3512",
+		SHA3512:         "SHA3512",
+		Blake2b512:      "Blake2b512",
+		SHA2512:         "SHA2512",
+		Ed25519Attached: "Ed25519Attached",
+		EcDSAAttached:   "EcDSAAttached",
 	}
 
 	codeDataLength = map[Code]int{
-		Ed25519Seed:   32,
-		Ed25519NT:     32,
-		X25519:        32,
-		Ed25519:       32,
-		Blake3256:     32,
-		Blake2b256:    32,
-		Blake2s256:    32,
-		SHA3256:       32,
-		SHA2256:       32,
-		RandomSeed128: 16,
-		Ed25519Sig:    64,
-		EcDSASig:      64,
-		Blake3512:     64,
-		SHA3512:       64,
-		Blake2b512:    64,
-		SHA2512:       64,
+		Ed25519Seed:     32,
+		Ed25519NT:       32,
+		X25519:          32,
+		Ed25519:         32,
+		Blake3256:       32,
+		Blake2b256:      32,
+		Blake2s256:      32,
+		SHA3256:         32,
+		SHA2256:         32,
+		RandomSeed128:   16,
+		Ed25519Sig:      64,
+		EcDSASig:        64,
+		Blake3512:       64,
+		SHA3512:         64,
+		Blake2b512:      64,
+		SHA2512:         64,
+		Ed25519Attached: 64,
+		EcDSAAttached:   64,
 	}
 
 	codePrefixBase64Length = map[Code]int{
-		Ed25519Seed:   44,
-		Ed25519NT:     44,
-		X25519:        44,
-		Ed25519:       44,
-		Blake3256:     44,
-		Blake2b256:    44,
-		Blake2s256:    44,
-		SHA3256:       44,
-		SHA2256:       44,
-		RandomSeed128: 24,
-		Ed25519Sig:    88,
-		EcDSASig:      88,
-		Blake3512:     88,
-		SHA3512:       88,
-		Blake2b512:    88,
-		SHA2512:       88,
+		Ed25519Seed:     44,
+		Ed25519NT:       44,
+		X25519:          44,
+		Ed25519:         44,
+		Blake3256:       44,
+		Blake2b256:      44,
+		Blake2s256:      44,
+		SHA3256:         44,
+		SHA2256:         44,
+		RandomSeed128:   24,
+		Ed25519Sig:      88,
+		EcDSASig:        88,
+		Blake3512:       88,
+		SHA3512:         88,
+		Blake2b512:      88,
+		SHA2512:         88,
+		Ed25519Attached: 88,
+		EcDSAAttached:   88,
 	}
 
 	codePrefixDataLength = map[Code]int{
-		Ed25519Seed:   33,
-		Ed25519NT:     33,
-		X25519:        33,
-		Ed25519:       33,
-		Blake3256:     33,
-		Blake2b256:    33,
-		Blake2s256:    33,
-		SHA3256:       33,
-		SHA2256:       33,
-		RandomSeed128: 18,
-		Ed25519Sig:    66,
-		EcDSASig:      66,
-		Blake3512:     66,
-		SHA3512:       66,
-		Blake2b512:    66,
-		SHA2512:       66,
+		Ed25519Seed:     33,
+		Ed25519NT:       33,
+		X25519:          33,
+		Ed25519:         33,
+		Blake3256:       33,
+		Blake2b256:      33,
+		Blake2s256:      33,
+		SHA3256:         33,
+		SHA2256:         33,
+		RandomSeed128:   18,
+		Ed25519Sig:      66,
+		EcDSASig:        66,
+		Blake3512:       66,
+		SHA3512:         66,
+		Blake2b512:      66,
+		SHA2512:         66,
+		Ed25519Attached: 66,
+		EcDSAAttached:   66,
 	}
 )
 
@@ -203,6 +217,15 @@ func (c Code) SelfSigning() bool {
 func (c Code) Basic() bool {
 	switch c {
 	case Ed25519NT, Ed25519:
+		return true
+	}
+	return false
+}
+
+// AttachedSignature derivation
+func (c Code) AttachedSignature() bool {
+	switch c {
+	case Ed25519Attached, EcDSAAttached:
 		return true
 	}
 	return false
