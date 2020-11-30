@@ -37,10 +37,26 @@ func (l *Log) Inception() *event.Event {
 	return nil
 }
 
-// Current return the current event in the log
+// Current returns the current event in the log
 func (l *Log) Current() *event.Event {
 	sort.Sort(BySequence(l.Events))
+
 	return l.Events[len(l.Events)-1]
+}
+
+// CurrentEstablishment returns the most current establishment event
+// These differ from other events in that they contain key commitments
+// and are used to verify the signatures for all subsequent events
+func (l *Log) CurrentEstablishment() *event.Event {
+	sort.Sort(BySequence(l.Events))
+
+	for i := len(l.Events) - 1; i >= 0; i-- {
+		if l.Events[i].ILK().Establishment() {
+			return l.Events[i]
+		}
+	}
+
+	return nil
 }
 
 // Apply the provided event to the log
@@ -80,6 +96,43 @@ func (l *Log) Apply(e *event.Event) error {
 	}
 
 	l.Events = append(l.Events, e)
+
+	return nil
+}
+
+// Verify the event signatures against the current log
+// establishment event
+func (l *Log) Verify(m *event.Message) error {
+	var currentEvent *event.Event
+	if len(l.Events) == 0 {
+		if m.Event.EventType != event.ICP.String() {
+			return errors.New("first event in an empty log must be an inception event")
+		}
+		currentEvent = m.Event
+	} else {
+		if m.Event.ILK() == event.ROT {
+			currentEvent = m.Event
+		} else {
+			currentEvent = l.CurrentEstablishment()
+		}
+	}
+
+	mRaw, err := m.Event.Serialize()
+	if err != nil {
+		return err
+	}
+
+	for _, sig := range m.Signatures {
+		keyD, err := currentEvent.KeyDerivation(int(sig.KeyIndex))
+		if err != nil {
+			return fmt.Errorf("unable to get key derivation for signing key at index %d (%s)", sig.KeyIndex, err)
+		}
+
+		err = derivation.VerifyWithAttachedSignature(keyD, sig, mRaw)
+		if err != nil {
+			return fmt.Errorf("Invalid signature for key at index %d", sig.KeyIndex)
+		}
+	}
 
 	return nil
 }

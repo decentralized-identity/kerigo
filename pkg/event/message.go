@@ -1,12 +1,10 @@
 package event
 
+import "github.com/decentralized-identity/kerigo/pkg/derivation"
+
 // an event message holds the deserialized event
 // along with the provided signature
 type Message struct {
 	Event      *Event
-	Signatures []string
-}
-
-func ValidateMessage(event *Event, sig []byte) error {
-	return nil
+	Signatures []*derivation.Derivation
 }

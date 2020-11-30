@@ -99,6 +99,14 @@ func TestLog(t *testing.T) {
 	err = json.Unmarshal(nxt, e)
 	assert.Nil(err)
 
+	sig = []byte(`-AABAAy0fxup1pAatbj9IneWbFLp2qcozBVOFnmjlbf4Sr8QNL2byHOth3M3r-_3Eu5C9xmywPHZtixt-wc5eFqXxhAw`)
+	d, extra, err = derivation.ParseAttachedSignatures(sig)
+	assert.Nil(err)
+	assert.Empty(extra)
+	assert.Len(d, 1)
+
+	assert.True(ed25519.Verify(keyD.Raw, nxt, d[0].Raw))
+
 	err = l.Apply(e)
 	assert.Nil(err)
 }
