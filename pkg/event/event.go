@@ -20,16 +20,18 @@ const (
 	DIP
 	RCT
 	VRC
+	DRT
 )
 
 var (
 	ilkValue = map[string]ILK{
-		"ICP": ICP,
-		"ROT": ROT,
-		"IXN": IXN,
-		"DIP": DIP,
-		"RCT": RCT,
-		"VRC": VRC,
+		"icp": ICP,
+		"rot": ROT,
+		"ixn": IXN,
+		"dip": DIP,
+		"rct": RCT,
+		"vrc": VRC,
+		"drt": DRT,
 	}
 
 	ilkString = map[ILK]string{
@@ -39,11 +41,18 @@ var (
 		DIP: "dip",
 		RCT: "rct",
 		VRC: "vrc",
+		DRT: "drt",
 	}
 )
 
 func (i ILK) String() string {
 	return ilkString[i]
+}
+
+// Establishment returns true if the ILK is an establishment
+// event type
+func (i ILK) Establishment() bool {
+	return i == ICP || i == ROT
 }
 
 type FORMAT int
@@ -63,18 +72,101 @@ var (
 )
 
 type Event struct {
-	Version                       string   `json:"vs"`
-	Prefix                        string   `json:"pre,omitempty"`
-	Sequence                      string   `json:"sn"`
-	EventType                     string   `json:"ilk"`
-	Digest                        string   `json:"dig,omitempty"`
-	SigningThreshold              string   `json:"sith"`
-	Keys                          []string `json:"keys"`
-	Next                          string   `json:"nxt"`
-	AccountableDuplicityThreshold string   `json:"toad"`
-	Witnesses                     []string `json:"wits"`
-	Config                        []string `json:"cnfg"`
-	Seal                          []Seal   `json:"seal,omitempty"`
+	Version                       string        `json:"vs"`
+	Prefix                        string        `json:"pre,omitempty"`
+	Sequence                      string        `json:"sn"`
+	EventType                     string        `json:"ilk"`
+	Digest                        string        `json:"dig,omitempty"`
+	SigningThreshold              string        `json:"sith,omitempty"`
+	Keys                          []string      `json:"keys,omitempty"`
+	Next                          string        `json:"nxt,omitempty"`
+	AccountableDuplicityThreshold string        `json:"toad,omitempty"`
+	Witnesses                     []string      `json:"wits,omitempty"`
+	Add                           []string      `json:"adds,omitempty"`
+	Cut                           []string      `json:"cuts,omitempty"`
+	Config                        []interface{} `json:"cnfg,omitempty"`
+	Permissions                   []interface{} `json:"perm,omitempty"`
+	Data                          []Seal        `json:"data,omitempty"`
+	Seal                          []Seal        `json:"seal,omitempty"`
+}
+
+// ILK returns the ILK iota value for the event
+func (e *Event) ILK() ILK {
+	return ilkValue[e.EventType]
+}
+
+// MarshalJSON interface implementation.
+// not all events requrie all fields, and some event types
+// requrie empty arrays in place of null values. This allows
+// us to correctly marhsal the Event data to JSON
+func (e *Event) MarshalJSON() ([]byte, error) {
+	type EventAlias Event
+
+	switch e.EventType {
+
+	case ROT.String(), DRT.String():
+		// roation events need cuts, adds, and data
+		if e.Cut == nil {
+			e.Cut = []string{}
+		}
+		if e.Add == nil {
+			e.Add = []string{}
+		}
+		if e.Data == nil {
+			e.Data = []Seal{}
+		}
+
+		return json.Marshal(&struct {
+			*EventAlias
+			Cut  []string `json:"cuts"`
+			Add  []string `json:"adds"`
+			Data []Seal   `json:"data"`
+		}{
+			EventAlias: (*EventAlias)(e),
+			Cut:        e.Cut,
+			Add:        e.Add,
+			Data:       e.Data,
+		})
+
+	case IXN.String():
+		// IXN events need data
+		if e.Data == nil {
+			e.Data = []Seal{}
+		}
+		return json.Marshal(&struct {
+			*EventAlias
+			Data []Seal `json:"data"`
+		}{
+			EventAlias: (*EventAlias)(e),
+			Data:       e.Data,
+		})
+
+	case ICP.String():
+		// Inception events need cnfg
+		if e.Config == nil {
+			e.Config = []interface{}{}
+		}
+		if e.Witnesses == nil {
+			e.Witnesses = []string{}
+		}
+
+		return json.Marshal(&struct {
+			*EventAlias
+			Witnesses []string      `json:"wits"`
+			Config    []interface{} `json:"cnfg"`
+		}{
+			EventAlias: (*EventAlias)(e),
+			Witnesses:  e.Witnesses,
+			Config:     e.Config,
+		})
+	}
+
+	// Default - just return the encoded struct
+	return json.Marshal(&struct {
+		*EventAlias
+	}{
+		EventAlias: (*EventAlias)(e),
+	})
 }
 
 // SequenceInt returns an integer representation of the

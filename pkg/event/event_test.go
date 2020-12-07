@@ -68,7 +68,7 @@ func TestSerialize(t *testing.T) {
 		AccountableDuplicityThreshold: "0",
 		Keys:                          []string{"DSuhyBcPZEZLK-fcw5tzHn2N46wRCG_ZOoeKtWTOunRA"},
 		Next:                          "EGAPkzNZMtX-QiVgbRbyAIZGoXvbGv9IPb0foWTZvI_4",
-		Config:                        []string{},
+		Config:                        []interface{}{},
 		Witnesses:                     []string{},
 	}
 

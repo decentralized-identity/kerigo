@@ -2,6 +2,7 @@ package derivation
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
@@ -166,4 +167,18 @@ func ParseAttachedSignatures(signatures []byte) ([]*Derivation, []byte, error) {
 	}
 
 	return derivations, buf.Bytes(), nil
+}
+
+// VerifyWithAttachedSignature takes the key and signature derivations
+// and verifies the provided message bytes using the correct sig alg.
+func VerifyWithAttachedSignature(key, signature *Derivation, msg []byte) error {
+	switch signature.Code {
+	case Ed25519Attached:
+		if !ed25519.Verify(key.Raw, msg, signature.Raw) {
+			return errors.New("invalid message signature")
+		}
+		return nil
+	}
+
+	return errors.New("unknown or unsupported signature derivation")
 }

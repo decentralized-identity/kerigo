@@ -155,7 +155,7 @@ func NewInceptionEvent(opts ...EventOption) (*Event, error) {
 		SigningThreshold:              "1",
 		AccountableDuplicityThreshold: "0",
 		Witnesses:                     []string{},
-		Config:                        []string{},
+		Config:                        []interface{}{},
 	}
 	for _, o := range opts {
 		err := o(e)
@@ -174,7 +174,7 @@ func NewEvent(opts ...EventOption) (*Event, error) {
 		SigningThreshold:              "1",
 		AccountableDuplicityThreshold: "0",
 		Witnesses:                     []string{},
-		Config:                        []string{},
+		Config:                        []interface{}{},
 	}
 
 	for _, o := range opts {
