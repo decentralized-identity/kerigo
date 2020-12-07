@@ -72,22 +72,22 @@ var (
 )
 
 type Event struct {
-	Version                       string        `json:"v"`
-	Prefix                        string        `json:"i,omitempty"`
-	Sequence                      string        `json:"s"`
-	EventType                     string        `json:"t"`
-	Digest                        string        `json:"p,omitempty"`
-	SigningThreshold              string        `json:"kt,omitempty"`
-	Keys                          []string      `json:"k,omitempty"`
-	Next                          string        `json:"n,omitempty"`
-	AccountableDuplicityThreshold string        `json:"wt,omitempty"`
-	Witnesses                     []string      `json:"w,omitempty"`
-	Add                           []string      `json:"wa,omitempty"`
-	Cut                           []string      `json:"wr,omitempty"`
-	Config                        []interface{} `json:"c,omitempty"`
-	Permissions                   []interface{} `json:"perm,omitempty"`
-	Data                          []Seal        `json:"a,omitempty"`
-	Seal                          []Seal        `json:"da,omitempty"`
+	Version                       string         `json:"v"`
+	Prefix                        string         `json:"i,omitempty"`
+	Sequence                      string         `json:"s"`
+	EventType                     string         `json:"t"`
+	Digest                        string         `json:"p,omitempty"`
+	SigningThreshold              string         `json:"kt,omitempty"`
+	Keys                          []string       `json:"k,omitempty"`
+	Next                          string         `json:"n,omitempty"`
+	AccountableDuplicityThreshold string         `json:"wt,omitempty"`
+	Witnesses                     []string       `json:"w,omitempty"`
+	Add                           []string       `json:"wa,omitempty"`
+	Cut                           []string       `json:"wr,omitempty"`
+	Config                        []prefix.Trait `json:"c,omitempty"`
+	Permissions                   []interface{}  `json:"perm,omitempty"`
+	Seals                         []Seal         `json:"a,omitempty"`
+	DelegatorSeal                 *Seal          `json:"da,omitempty"`
 }
 
 // ILK returns the ILK iota value for the event
@@ -112,39 +112,39 @@ func (e *Event) MarshalJSON() ([]byte, error) {
 		if e.Add == nil {
 			e.Add = []string{}
 		}
-		if e.Data == nil {
-			e.Data = []Seal{}
+		if e.Seals == nil {
+			e.Seals = []Seal{}
 		}
 
 		return json.Marshal(&struct {
 			*EventAlias
-			Cut  []string `json:"wr"`
-			Add  []string `json:"wa"`
-			Data []Seal   `json:"a"`
+			Cut   []string `json:"wr"`
+			Add   []string `json:"wa"`
+			Seals []Seal   `json:"a"`
 		}{
 			EventAlias: (*EventAlias)(e),
 			Cut:        e.Cut,
 			Add:        e.Add,
-			Data:       e.Data,
+			Seals:      e.Seals,
 		})
 
 	case IXN.String():
 		// IXN events need data
-		if e.Data == nil {
-			e.Data = []Seal{}
+		if e.Seals == nil {
+			e.Seals = []Seal{}
 		}
 		return json.Marshal(&struct {
 			*EventAlias
-			Data []Seal `json:"a"`
+			Seals []Seal `json:"a"`
 		}{
 			EventAlias: (*EventAlias)(e),
-			Data:       e.Data,
+			Seals:      e.Seals,
 		})
 
 	case ICP.String():
 		// Inception events need cnfg
 		if e.Config == nil {
-			e.Config = []interface{}{}
+			e.Config = []prefix.Trait{}
 		}
 		if e.Witnesses == nil {
 			e.Witnesses = []string{}
@@ -152,8 +152,8 @@ func (e *Event) MarshalJSON() ([]byte, error) {
 
 		return json.Marshal(&struct {
 			*EventAlias
-			Witnesses []string      `json:"w"`
-			Config    []interface{} `json:"c"`
+			Witnesses []string       `json:"w"`
+			Config    []prefix.Trait `json:"c"`
 		}{
 			EventAlias: (*EventAlias)(e),
 			Witnesses:  e.Witnesses,

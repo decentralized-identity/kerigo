@@ -78,7 +78,7 @@ func (l *Log) Apply(e *event.Event) error {
 
 	incomingDerivation, err := derivation.FromPrefix(e.Digest)
 	if err != nil {
-		return fmt.Errorf("unable to determine digest derivation (%s)", err)
+		return fmt.Errorf("unable to determin digest derivation (%s)", err)
 	}
 
 	cSerialized, err := current.Serialize()
