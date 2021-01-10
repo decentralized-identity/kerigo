@@ -57,7 +57,7 @@ func TestSerialize(t *testing.T) {
 	assert := assert.New(t)
 
 	//JSON
-	expected := []byte(`{"vs":"KERI10JSON0000fb_","pre":"ETT9n-TCGn8XfkGkcNeNmZgdZSwHPLyDsojFXotBXdSo","sn":"0","ilk":"icp","sith":"1","keys":["DSuhyBcPZEZLK-fcw5tzHn2N46wRCG_ZOoeKtWTOunRA"],"nxt":"EGAPkzNZMtX-QiVgbRbyAIZGoXvbGv9IPb0foWTZvI_4","toad":"0","wits":[],"cnfg":[]}`)
+	expected := []byte(`{"v":"KERI10JSON0000fb_","i":"ETT9n-TCGn8XfkGkcNeNmZgdZSwHPLyDsojFXotBXdSo","s":"0","t":"icp","kt":"1","k":["DSuhyBcPZEZLK-fcw5tzHn2N46wRCG_ZOoeKtWTOunRA"],"n":"EGAPkzNZMtX-QiVgbRbyAIZGoXvbGv9IPb0foWTZvI_4","wt":"0","w":[],"c":[]}`)
 
 	e := &Event{
 		Version:                       "KERI10JSON0000fb_",
@@ -86,9 +86,9 @@ func TestDigest(t *testing.T) {
 	assert := assert.New(t)
 
 	//JSON
-	data := []byte(`{"vs":"KERI10JSON0000fb_","pre":"ETT9n-TCGn8XfkGkcNeNmZgdZSwHPLyDsojFXotBXdSo","sn":"0","ilk":"icp","sith":"1","keys":["DSuhyBcPZEZLK-fcw5tzHn2N46wRCG_ZOoeKtWTOunRA"],"nxt":"EGAPkzNZMtX-QiVgbRbyAIZGoXvbGv9IPb0foWTZvI_4","toad":"0","wits":[],"cnfg":[]}`)
-	expectedString := "EixO2SBNow3tYDfYX6NRt1O9ZSMx2IsBeWkh8YJRp5VI"
-	expectedBytes := []byte{139, 19, 182, 72, 19, 104, 195, 123, 88, 13, 246, 23, 232, 212, 109, 212, 239, 89, 72, 204, 118, 34, 192, 94, 90, 72, 124, 96, 148, 105, 229, 82}
+	data := []byte(`{"v":"KERI10JSON0000fb_","i":"ETT9n-TCGn8XfkGkcNeNmZgdZSwHPLyDsojFXotBXdSo","s":"0","t":"icp","kt":"1","k":["DSuhyBcPZEZLK-fcw5tzHn2N46wRCG_ZOoeKtWTOunRA"],"n":"EGAPkzNZMtX-QiVgbRbyAIZGoXvbGv9IPb0foWTZvI_4","wt":"0","w":[],"c":[]}`)
+	expectedString := "ErgY910xsF3NSLGH4Yl6O9oEkdxj0FOujnHTD8W5V_AI"
+	expectedBytes := []byte{174, 6, 61, 215, 76, 108, 23, 115, 82, 44, 97, 248, 98, 94, 142, 246, 129, 36, 119, 24, 244, 20, 235, 163, 156, 116, 195, 241, 110, 85, 252, 2}
 
 	digestBytes, err := Digest(data, derivation.Blake3256)
 	assert.Nil(err)

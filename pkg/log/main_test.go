@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/decentralized-identity/kerigo/pkg/derivation"
 	"github.com/decentralized-identity/kerigo/pkg/event"
 	"github.com/decentralized-identity/kerigo/pkg/prefix"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestOrder(t *testing.T) {
@@ -46,7 +47,7 @@ func TestApply(t *testing.T) {
 	assert := assert.New(t)
 
 	// Pre-defined inception json
-	inceptionBytes := []byte(`{"vs":"KERI10JSON0000cf_","pre":"Bh8On2eI1L-5OhKPLgnMh80ovcP8sV6E7Lcg3FDy-TbI","sn":"0","ilk":"icp","sith":"1","keys":["Bh8On2eI1L-5OhKPLgnMh80ovcP8sV6E7Lcg3FDy-TbI"],"nxt":"","toad":"0","wits":[],"cnfg":[]}`)
+	inceptionBytes := []byte(`{"v":"KERI10JSON0000cf_","i":"Bh8On2eI1L-5OhKPLgnMh80ovcP8sV6E7Lcg3FDy-TbI","s":"0","t":"icp","kt":"1","k":["Bh8On2eI1L-5OhKPLgnMh80ovcP8sV6E7Lcg3FDy-TbI"],"n":"","wt":"0","w":[],"c":[]}`)
 	icp := &event.Event{}
 	err := json.Unmarshal(inceptionBytes, icp)
 	assert.Nil(err)
@@ -105,8 +106,8 @@ func TestVerify(t *testing.T) {
 
 	l := Log{}
 
-	incept := []byte(`{"vs":"KERI10JSON0000fb_","pre":"ETT9n-TCGn8XfkGkcNeNmZgdZSwHPLyDsojFXotBXdSo","sn":"0","ilk":"icp","sith":"1","keys":["DSuhyBcPZEZLK-fcw5tzHn2N46wRCG_ZOoeKtWTOunRA"],"nxt":"EGAPkzNZMtX-QiVgbRbyAIZGoXvbGv9IPb0foWTZvI_4","toad":"0","wits":[],"cnfg":[]}`)
-	inceptSig := []byte(`-AABAAtf0OqrkGmK3vdMcS5E3mLxeFh14SbvCNjZnZrxAazgYTemZc1S-Pr0ge9IQuHesmh8cJncRkef1PgxFavDKqDQ`)
+	incept := []byte(`{"v":"KERI10JSON0000e6_","i":"ENqFtH6_cfDg8riLZ-GDvDaCKVn6clOJa7ZXXVXSWpRY","s":"0","t":"icp","kt":"1","k":["DSuhyBcPZEZLK-fcw5tzHn2N46wRCG_ZOoeKtWTOunRA"],"n":"EPYuj8mq_PYYsoBKkzX1kxSPGYBWaIya3slgCOyOtlqU","wt":"0","w":[],"c":[]}`)
+	inceptSig := []byte(`-AABAAMiMnE1gmjqoEuDmhbU7aqYBUqKCqAmrHPQB-tPUKSbH_IUXsbglEQ6TGlQT1k7G4VlnKoczYBUd7CPJuo5TnDg`)
 
 	msg := &event.Message{Event: &event.Event{}}
 	err := json.Unmarshal(incept, msg.Event)
@@ -125,14 +126,14 @@ func TestVerify(t *testing.T) {
 	err = l.Apply(msg.Event)
 	assert.Nil(err)
 
-	ixn := []byte(`{"vs":"KERI10JSON0000a3_","pre":"ETT9n-TCGn8XfkGkcNeNmZgdZSwHPLyDsojFXotBXdSo","sn":"1","ilk":"ixn","dig":"EixO2SBNow3tYDfYX6NRt1O9ZSMx2IsBeWkh8YJRp5VI","data":[]}`)
-	ixnSig := []byte(`-AABAAaptFFViQVJs2Rj0zuoOId1qy0B0piJmN7uxxD4N1wJapWXdxSZq-Z3Le6XmbPaMGf7xdfrh7IHi15h-9b7mKBQ`)
+	rot := []byte(`{"v":"KERI10JSON000122_","i":"ENqFtH6_cfDg8riLZ-GDvDaCKVn6clOJa7ZXXVXSWpRY","s":"1","t":"rot","p":"E9ZTKOhr-lqB7jbBMBpUIdMpfWvEswoMoc5UrwCRcTSc","kt":"1","k":["DVcuJOOJF1IE8svqEtrSuyQjGTd2HhfAkt9y2QkUtFJI"],"n":"E-dapdcC6XR1KWmWDsNl4J_OxcGxNZw1Xd95JH5a34fI","wt":"0","wr":[],"wa":[],"a":[]}`)
+	rotSig := []byte(`-AABAA91xjNugSykLy0_IZsvkUxkVnZVlNqqhhZT5_VT9wK0pccNrD6i_3h_lTK5ZmXr0wsN6zn-4KMw3ZtYQ2bjbuDQ`)
 
 	msg = &event.Message{Event: &event.Event{}}
-	err = json.Unmarshal(ixn, msg.Event)
+	err = json.Unmarshal(rot, msg.Event)
 	assert.Nil(err)
 
-	sigs, extra, err = derivation.ParseAttachedSignatures(ixnSig)
+	sigs, extra, err = derivation.ParseAttachedSignatures(rotSig)
 	assert.Empty(extra)
 	assert.Nil(err)
 	assert.Len(sigs, 1)
@@ -143,14 +144,14 @@ func TestVerify(t *testing.T) {
 	err = l.Apply(msg.Event)
 	assert.Nil(err)
 
-	rot := []byte(`{"vs":"KERI10JSON00013a_","pre":"ETT9n-TCGn8XfkGkcNeNmZgdZSwHPLyDsojFXotBXdSo","sn":"2","ilk":"rot","dig":"EOphiyHf3RGC_gP0_lj402J7-4ux6UpKvDnX8sssu2pc","sith":"1","keys":["DVcuJOOJF1IE8svqEtrSuyQjGTd2HhfAkt9y2QkUtFJI"],"nxt":"EoWDoTGQZ6lJ19LsaV4g42k5gccsB_-ttYHOft6kuYZk","toad":"0","cuts":[],"adds":[],"data":[]}`)
-	rotSig := []byte(`-AABAAtuSAbqbOMXTnphZx_c1mH875OO8cQi6zeeTXgDz2LSsnJeOJI2Ov7BF6Sq7YuAXYfkWIOWGdHuFzAFAcx0udBw`)
+	ixn := []byte(`{"v":"KERI10JSON000098_","i":"ENqFtH6_cfDg8riLZ-GDvDaCKVn6clOJa7ZXXVXSWpRY","s":"2","t":"ixn","p":"ELWbb2Oun3FTpWZqHYmeefM5B-11nZQBsxPfufyjJHy4","a":[]}`)
+	ixnSig := []byte(`-AABAAqxzoxk4rltuP41tB8wEpHFC4Yd1TzhOGfuhlylbDFAm73jB2emdvaLjUP6FrHxiPqS2CcbAWaVNsmii80KJEBw`)
 
 	msg = &event.Message{Event: &event.Event{}}
-	err = json.Unmarshal(rot, msg.Event)
+	err = json.Unmarshal(ixn, msg.Event)
 	assert.Nil(err)
 
-	sigs, extra, err = derivation.ParseAttachedSignatures(rotSig)
+	sigs, extra, err = derivation.ParseAttachedSignatures(ixnSig)
 	assert.Empty(extra)
 	assert.Nil(err)
 	assert.Len(sigs, 1)
