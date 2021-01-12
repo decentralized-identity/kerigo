@@ -72,22 +72,22 @@ var (
 )
 
 type Event struct {
-	Version                       string        `json:"vs"`
-	Prefix                        string        `json:"pre,omitempty"`
-	Sequence                      string        `json:"sn"`
-	EventType                     string        `json:"ilk"`
-	Digest                        string        `json:"dig,omitempty"`
-	SigningThreshold              string        `json:"sith,omitempty"`
-	Keys                          []string      `json:"keys,omitempty"`
-	Next                          string        `json:"nxt,omitempty"`
-	AccountableDuplicityThreshold string        `json:"toad,omitempty"`
-	Witnesses                     []string      `json:"wits,omitempty"`
-	Add                           []string      `json:"adds,omitempty"`
-	Cut                           []string      `json:"cuts,omitempty"`
-	Config                        []interface{} `json:"cnfg,omitempty"`
+	Version                       string        `json:"v"`
+	Prefix                        string        `json:"i,omitempty"`
+	Sequence                      string        `json:"s"`
+	EventType                     string        `json:"t"`
+	Digest                        string        `json:"p,omitempty"`
+	SigningThreshold              string        `json:"kt,omitempty"`
+	Keys                          []string      `json:"k,omitempty"`
+	Next                          string        `json:"n,omitempty"`
+	AccountableDuplicityThreshold string        `json:"wt,omitempty"`
+	Witnesses                     []string      `json:"w,omitempty"`
+	Add                           []string      `json:"wa,omitempty"`
+	Cut                           []string      `json:"wr,omitempty"`
+	Config                        []interface{} `json:"c,omitempty"`
 	Permissions                   []interface{} `json:"perm,omitempty"`
-	Data                          []Seal        `json:"data,omitempty"`
-	Seal                          []Seal        `json:"seal,omitempty"`
+	Data                          []Seal        `json:"a,omitempty"`
+	Seal                          []Seal        `json:"da,omitempty"`
 }
 
 // ILK returns the ILK iota value for the event
@@ -118,9 +118,9 @@ func (e *Event) MarshalJSON() ([]byte, error) {
 
 		return json.Marshal(&struct {
 			*EventAlias
-			Cut  []string `json:"cuts"`
-			Add  []string `json:"adds"`
-			Data []Seal   `json:"data"`
+			Cut  []string `json:"wr"`
+			Add  []string `json:"wa"`
+			Data []Seal   `json:"a"`
 		}{
 			EventAlias: (*EventAlias)(e),
 			Cut:        e.Cut,
@@ -135,7 +135,7 @@ func (e *Event) MarshalJSON() ([]byte, error) {
 		}
 		return json.Marshal(&struct {
 			*EventAlias
-			Data []Seal `json:"data"`
+			Data []Seal `json:"a"`
 		}{
 			EventAlias: (*EventAlias)(e),
 			Data:       e.Data,
@@ -152,8 +152,8 @@ func (e *Event) MarshalJSON() ([]byte, error) {
 
 		return json.Marshal(&struct {
 			*EventAlias
-			Witnesses []string      `json:"wits"`
-			Config    []interface{} `json:"cnfg"`
+			Witnesses []string      `json:"w"`
+			Config    []interface{} `json:"c"`
 		}{
 			EventAlias: (*EventAlias)(e),
 			Witnesses:  e.Witnesses,
