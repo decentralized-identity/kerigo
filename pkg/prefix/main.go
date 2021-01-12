@@ -11,6 +11,27 @@ const (
 	SelfAddressing
 )
 
+// Traits are configuration options that indicate certain restrictions
+// on how the prefix is intended to be used. They are contained in the
+// "c" field of an event.
+type Trait int
+
+const (
+	EstablishmentOnly = iota
+	DoNotDelegate
+)
+
+var (
+	traitToString = map[Trait]string{
+		EstablishmentOnly: "EO",
+		DoNotDelegate:     "DND",
+	}
+)
+
+func (t Trait) String() string {
+	return traitToString[t]
+}
+
 type Prefix interface {
 	String() string
 	Derivation() *derivation.Derivation
