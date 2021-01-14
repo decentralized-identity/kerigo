@@ -109,3 +109,13 @@ func TestSequenceInt(t *testing.T) {
 	e.Sequence = fmt.Sprintf("%x", 93840482)
 	assert.Equal(93840482, e.SequenceInt())
 }
+
+func TestSigningThresholdInt(t *testing.T) {
+	assert := assert.New(t)
+
+	e := Event{SigningThreshold: "0"}
+	assert.Equal(0, e.SigningThresholdInt())
+
+	e.SigningThreshold = fmt.Sprintf("%x", 93840482)
+	assert.Equal(93840482, e.SigningThresholdInt())
+}

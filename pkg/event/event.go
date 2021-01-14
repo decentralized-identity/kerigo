@@ -179,6 +179,16 @@ func (e *Event) SequenceInt() int {
 	return int(eInt)
 }
 
+// SigningThresholdInt returns an integer representation of
+// the hex signing threshold string
+func (e *Event) SigningThresholdInt() int {
+	eInt, err := strconv.ParseInt(e.SigningThreshold, 16, 64)
+	if err != nil {
+		return -1
+	}
+	return int(eInt)
+}
+
 // KeyDerivation returns a dervation for the key prefix at the
 // provided index
 func (e *Event) KeyDerivation(index int) (*derivation.Derivation, error) {
