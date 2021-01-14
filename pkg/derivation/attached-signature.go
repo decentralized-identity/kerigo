@@ -121,9 +121,9 @@ func FromAttachedSignature(sig string) (*Derivation, error) {
 // after parsing the the number of signatures indicated in the sig count. It
 // will error if there are not enough bytes for the number of signatures, or
 // if any individual signature is not sucessfully parsed.
-func ParseAttachedSignatures(signatures []byte) ([]*Derivation, []byte, error) {
+func ParseAttachedSignatures(signatures []byte) ([]Derivation, []byte, error) {
 	buf := bytes.NewBuffer(signatures)
-	derivations := []*Derivation{}
+	derivations := []Derivation{}
 
 	sigCountBytes := make([]byte, 4)
 	read, err := buf.Read(sigCountBytes)
@@ -161,7 +161,7 @@ func ParseAttachedSignatures(signatures []byte) ([]*Derivation, []byte, error) {
 			return nil, nil, err
 		}
 
-		derivations = append(derivations, der)
+		derivations = append(derivations, *der)
 
 		current++
 	}

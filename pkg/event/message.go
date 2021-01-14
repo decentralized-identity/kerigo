@@ -6,5 +6,5 @@ import "github.com/decentralized-identity/kerigo/pkg/derivation"
 // along with the provided signature
 type Message struct {
 	Event      *Event
-	Signatures []*derivation.Derivation
+	Signatures []derivation.Derivation
 }
