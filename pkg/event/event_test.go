@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/decentralized-identity/kerigo/pkg/derivation"
+	"github.com/decentralized-identity/kerigo/pkg/prefix"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -68,7 +69,7 @@ func TestSerialize(t *testing.T) {
 		AccountableDuplicityThreshold: "0",
 		Keys:                          []string{"DSuhyBcPZEZLK-fcw5tzHn2N46wRCG_ZOoeKtWTOunRA"},
 		Next:                          "EGAPkzNZMtX-QiVgbRbyAIZGoXvbGv9IPb0foWTZvI_4",
-		Config:                        []interface{}{},
+		Config:                        []prefix.Trait{},
 		Witnesses:                     []string{},
 	}
 
