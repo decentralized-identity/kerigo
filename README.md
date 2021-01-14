@@ -1,6 +1,11 @@
 # KERIGO
 Go implementation of KERI  (Key Event Receipt Infrastructure)
 
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://raw.githubusercontent.com/decentralized-identity/kerigo/master/LICENSE)
+![Go Version](https://img.shields.io/github/go-mod/go-version/decentralized-identity/kerigo)
+![Build](https://github.com/decentralized-identity/kerigo/workflows/Build/badge.svg)
+[![codecov](https://codecov.io/gh/decentralized-identity/kerigo/branch/master/graph/badge.svg)](https://codecov.io/gh/decentralized-identity/kerigo)
+[![Go Report Card](https://goreportcard.com/badge/github.com/decentralized-identity/kerigo)](https://goreportcard.com/report/github.com/decentralized-identity/kerigo)
 # Introduction
 
 KERIGO is an open source go implementation of the [ Key Event Receipt Infrastructure (KERI) ](https://github.com/decentralized-identity/keri), a system designed to provide a secure identifier-based trust spanning layer for any stack. [The current version of the KERI paper can be found here](https://github.com/SmithSamuelM/Papers/blob/master/whitepapers/KERI_WP_2.x.web.pdf).
