@@ -26,7 +26,7 @@ func (e Escrow) Get(evnt *event.Event) (*event.Message, error) {
 		return nil, err
 	}
 
-	escrowed := &event.Message{}
+	escrowed := &event.Message{Event: evnt}
 
 	if esc, ok := e[digest]; ok {
 		escrowed = esc
@@ -125,6 +125,10 @@ func (l *Log) Inception() *event.Event {
 
 // Current returns the current event in the log
 func (l *Log) Current() *event.Event {
+	if len(l.Events) == 0 {
+		return nil
+	}
+
 	sort.Sort(BySequence(l.Events))
 
 	return l.Events[len(l.Events)-1].Event
