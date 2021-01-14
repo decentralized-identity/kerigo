@@ -17,12 +17,18 @@ func TestOrder(t *testing.T) {
 	assert := assert.New(t)
 	l := New()
 
+	e := l.Current()
+	assert.Nil(e)
+
+	e = l.Inception()
+	assert.Nil(e)
+
 	icp, err := event.NewEvent(event.WithType(event.ICP))
 	assert.Nil(err)
 
 	l.Events = append(l.Events, &event.Message{Event: icp})
 
-	e, err := event.NewEvent(event.WithType(event.ROT), event.WithSequence(1))
+	e, err = event.NewEvent(event.WithType(event.ROT), event.WithSequence(1))
 	assert.Nil(err)
 
 	l.Events = append(l.Events, &event.Message{Event: e})
