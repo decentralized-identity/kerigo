@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/decentralized-identity/kerigo/pkg/derivation"
 	"github.com/decentralized-identity/kerigo/pkg/prefix"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestFormatFromVersion(t *testing.T) {
