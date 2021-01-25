@@ -1,6 +1,7 @@
 package derivation
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/base64"
 	"testing"
@@ -309,17 +310,15 @@ func TestParseAttachedSignatures(t *testing.T) {
 	assert := assert.New(t)
 	sigString := []byte("-AABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
 
-	ders, extra, err := ParseAttachedSignatures(sigString)
+	ders, err := ParseAttachedSignatures(bytes.NewBuffer(sigString))
 	assert.Nil(err)
-	assert.Empty(extra)
 	if assert.Len(ders, 1) {
 		assert.Equal(uint16(0), ders[0].KeyIndex)
 	}
 
 	sigString = []byte("-AACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
-	ders, extra, err = ParseAttachedSignatures(sigString)
+	ders, err = ParseAttachedSignatures(bytes.NewBuffer(sigString))
 	assert.Nil(err)
-	assert.Empty(extra)
 	if assert.Len(ders, 2) {
 		assert.Equal(uint16(0), ders[0].KeyIndex)
 		assert.Equal(uint16(1), ders[1].KeyIndex)
@@ -327,20 +326,17 @@ func TestParseAttachedSignatures(t *testing.T) {
 
 	// Correctly return extra bytes
 	sigString = []byte("-AACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAsome extra data at the end")
-	ders, extra, err = ParseAttachedSignatures(sigString)
+	ders, err = ParseAttachedSignatures(bytes.NewBuffer(sigString))
 	assert.Nil(err)
-	if assert.NotEmpty(extra) {
-		assert.Equal("some extra data at the end", string(extra))
-	}
 	assert.Len(ders, 2)
 
 	// Invalid derivation code for 3rd sig
 	sigString = []byte("-AADAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAsome extra data at the end")
-	_, _, err = ParseAttachedSignatures(sigString)
+	ders, err = ParseAttachedSignatures(bytes.NewBuffer(sigString))
 	assert.NotNil(err)
 
 	// Valid derivation for 3 sig, but invalid data length
 	sigString = []byte("-AADAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAA")
-	_, _, err = ParseAttachedSignatures(sigString)
+	ders, err = ParseAttachedSignatures(bytes.NewBuffer(sigString))
 	assert.NotNil(err)
 }
