@@ -3,6 +3,7 @@ package event
 import (
 	"errors"
 	"fmt"
+	"math/big"
 
 	"github.com/decentralized-identity/kerigo/pkg/derivation"
 	"github.com/decentralized-identity/kerigo/pkg/prefix"
@@ -46,43 +47,26 @@ func WithNext(threshold int, code derivation.Code, keys ...prefix.Prefix) EventO
 		}
 
 		// digest the threshold
-		sithDig, err := derivation.New(derivation.WithCode(code))
+		der, err := derivation.New(derivation.WithCode(code))
 		if err != nil {
 			return err
 		}
 
-		_, err = sithDig.Derive([]byte(fmt.Sprintf("%x", threshold)))
+		_, err = der.Derive([]byte(fmt.Sprintf("%x", threshold)))
 		if err != nil {
 			return err
 		}
 
-		xorRaw := sithDig.Raw
+		sint := new(big.Int)
+		sint.SetBytes(der.Raw)
 		for ki := range keys {
-			var keyRaw []byte
-			if keys[ki].Derivation().Code.Basic() {
-				// we can convert to the correct derivation
-				der, _ := derivation.New(derivation.WithCode(code))
-				_, err := der.Derive(keys[ki].Raw())
-				if err != nil {
-					return fmt.Errorf("unable to conver basic key derivation (%s)", err)
-				}
-				keyRaw = der.Raw
-			} else {
-				if keys[ki].Derivation().Code != code {
-					return errors.New("all key derivations must be the same")
-				}
-				keyRaw = keys[ki].Raw()
-			}
-
-			buf := make([]byte, len(xorRaw))
-			for ri := range keyRaw {
-				buf[ri] = xorRaw[ri] ^ keyRaw[ri]
-			}
-
-			xorRaw = buf
+			keyRaw, _ := der.Derive([]byte(keys[ki].String()))
+			kint := new(big.Int)
+			kint.SetBytes(keyRaw)
+			_ = sint.Xor(sint, kint)
 		}
 
-		nextDig, err := derivation.New(derivation.WithCode(code), derivation.WithRaw(xorRaw))
+		nextDig, err := derivation.New(derivation.WithCode(code), derivation.WithRaw(sint.Bytes()))
 		if err != nil {
 			return err
 		}
@@ -146,8 +130,15 @@ func WithPrefix(prefix string) EventOption {
 	}
 }
 
+func WithSeal(seal *Seal) EventOption {
+	return func(e *Event) error {
+		e.Seals = []*Seal{seal}
+		return nil
+	}
+}
+
 // NewInceptionEvent returns and incpetion configured with the provided parameters
-// New Inception Events will have empty 'vs' and 'pre' strings
+// New Inception Events will have empty 'v' and 'i' strings
 func NewInceptionEvent(opts ...EventOption) (*Event, error) {
 	e := &Event{
 		EventType:                     ilkString[ICP],
@@ -188,7 +179,7 @@ func NewEvent(opts ...EventOption) (*Event, error) {
 		return nil, errors.New("must sepcify an event type")
 	}
 
-	if e.EventType != ilkString[ICP] && e.Sequence == "0" {
+	if (e.EventType != ilkString[ICP] && e.EventType != ilkString[VRC]) && e.Sequence == "0" {
 		return nil, errors.New("only inception events may have a sequence of 0")
 	}
 

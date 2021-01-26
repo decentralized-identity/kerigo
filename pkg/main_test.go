@@ -5,11 +5,12 @@ import (
 	"crypto/rand"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/decentralized-identity/kerigo/pkg/derivation"
 	"github.com/decentralized-identity/kerigo/pkg/event"
 	"github.com/decentralized-identity/kerigo/pkg/prefix"
 	"github.com/decentralized-identity/kerigo/pkg/version"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestNew(t *testing.T) {
