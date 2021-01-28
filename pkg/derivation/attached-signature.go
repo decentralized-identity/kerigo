@@ -1,12 +1,12 @@
 package derivation
 
 import (
-	"bytes"
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 )
 
 // Attahced Signature derivations must provide a signer function
@@ -121,27 +121,27 @@ func FromAttachedSignature(sig string) (*Derivation, error) {
 // after parsing the the number of signatures indicated in the sig count. It
 // will error if there are not enough bytes for the number of signatures, or
 // if any individual signature is not sucessfully parsed.
-func ParseAttachedSignatures(signatures []byte) ([]Derivation, []byte, error) {
-	buf := bytes.NewBuffer(signatures)
+func ParseAttachedSignatures(buf io.Reader) ([]Derivation, error) {
 	derivations := []Derivation{}
 
 	sigCountBytes := make([]byte, 4)
 	read, err := buf.Read(sigCountBytes)
 	if read != 4 || err != nil {
-		return nil, nil, errors.New("invalid signature count")
+		return nil, errors.New("invalid signature count")
 	}
 
 	sigCount, err := ParseSignatureCount(string(sigCountBytes))
 	if err != nil {
-		return nil, nil, fmt.Errorf("invalid signature count (%s)", err)
+		return nil, fmt.Errorf("invalid signature count (%s)", err)
 	}
 
 	// iterate over the signatures bytes for each signature
 	current := uint16(0)
 	for current < sigCount {
-		dCode, err := buf.ReadByte()
-		if err != nil {
-			return nil, nil, fmt.Errorf("unable to read signature (%s)", err)
+		dCode := make([]byte, 1)
+		read, err := buf.Read(dCode)
+		if read != 1 || err != nil {
+			return nil, fmt.Errorf("unable to read signature (%s)", err)
 		}
 
 		// get expected b64 length
@@ -150,15 +150,15 @@ func ParseAttachedSignatures(signatures []byte) ([]Derivation, []byte, error) {
 			sigString = make([]byte, c.PrefixBase64Length()-1)
 			read, err := buf.Read(sigString)
 			if read != c.PrefixBase64Length()-1 || err != nil {
-				return nil, nil, errors.New("invalid signature string length")
+				return nil, errors.New("invalid signature string length")
 			}
 		} else {
-			return nil, nil, fmt.Errorf("unable to determin signature derivation from code (%s)", string(dCode))
+			return nil, fmt.Errorf("unable to determin signature derivation from code (%s)", string(dCode))
 		}
 
-		der, err := FromAttachedSignature(string(append([]byte{dCode}, sigString...)))
+		der, err := FromAttachedSignature(string(append(dCode, sigString...)))
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 
 		derivations = append(derivations, *der)
@@ -166,7 +166,7 @@ func ParseAttachedSignatures(signatures []byte) ([]Derivation, []byte, error) {
 		current++
 	}
 
-	return derivations, buf.Bytes(), nil
+	return derivations, nil
 }
 
 // VerifyWithAttachedSignature takes the key and signature derivations

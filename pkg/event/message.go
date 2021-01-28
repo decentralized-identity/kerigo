@@ -15,7 +15,17 @@ func (m Message) Serialize() ([]byte, error) {
 		return nil, err
 	}
 
-	//TODO: correct attached signature count code
+	sc, err := derivation.NewSigCounter(derivation.WithCount(len(m.Signatures)))
+	if err != nil {
+		return nil, err
+	}
+
+	cntCode, err := sc.String()
+	if err != nil {
+		return nil, err
+	}
+
+	evt = append(evt, cntCode...)
 	for _, sig := range m.Signatures {
 		evt = append(evt, sig.AsPrefix()...)
 	}

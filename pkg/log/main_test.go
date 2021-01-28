@@ -1,6 +1,7 @@
 package log
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/json"
@@ -65,8 +66,7 @@ func TestVerifyAndApply(t *testing.T) {
 	err := json.Unmarshal(incept, msg.Event)
 	assert.Nil(err)
 
-	sigs, extra, err := derivation.ParseAttachedSignatures(inceptSig)
-	assert.Empty(extra)
+	sigs, err := derivation.ParseAttachedSignatures(bytes.NewBuffer(inceptSig))
 	assert.Nil(err)
 	assert.Len(sigs, 1)
 
@@ -86,8 +86,7 @@ func TestVerifyAndApply(t *testing.T) {
 	err = json.Unmarshal(rot, msg.Event)
 	assert.Nil(err)
 
-	sigs, extra, err = derivation.ParseAttachedSignatures(rotSig)
-	assert.Empty(extra)
+	sigs, err = derivation.ParseAttachedSignatures(bytes.NewBuffer(rotSig))
 	assert.Nil(err)
 	assert.Len(sigs, 1)
 
@@ -134,8 +133,7 @@ func TestVerifyAndApply(t *testing.T) {
 	err = json.Unmarshal(ixn, msg.Event)
 	assert.Nil(err)
 
-	sigs, extra, err = derivation.ParseAttachedSignatures(ixnSig)
-	assert.Empty(extra)
+	sigs, err = derivation.ParseAttachedSignatures(bytes.NewBuffer(ixnSig))
 	assert.Nil(err)
 	assert.Len(sigs, 1)
 
