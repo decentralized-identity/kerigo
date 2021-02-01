@@ -3,6 +3,7 @@ module github.com/decentralized-identity/kerigo
 go 1.13
 
 require (
+	github.com/aws/aws-sdk-go v1.35.7
 	github.com/google/tink/go v1.5.0
 	github.com/mitchellh/mapstructure v1.1.2
 	github.com/pkg/errors v0.9.1
