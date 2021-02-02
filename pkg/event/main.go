@@ -77,9 +77,48 @@ func WithNext(threshold int, code derivation.Code, keys ...prefix.Prefix) EventO
 }
 
 // WithThreshold sets the key threshold
-func WithThreshold(threshold int) EventOption {
+func WithThreshold(threshold int64) EventOption {
 	return func(e *Event) error {
-		e.SigningThreshold = fmt.Sprintf("%x", threshold)
+		st, err := NewSigThreshold(threshold)
+		if err != nil {
+			return err
+		}
+		e.SigThreshold = st
+		return nil
+	}
+}
+
+// WithWeightedTheshold sets a weighted signing threshold using provided
+// string int or fraction values. The total for all conditions must be
+// >= 1 otherwise the threshold can not be met. The order in which
+// the conditions are provided is important: they map to the specific
+// key index in the keys list, e.g, the second condition provided to this
+// configuration function would be the weight of a signature by the second key
+// in the keys list.
+func WithWeightedTheshold(conditions ...string) EventOption {
+	return func(e *Event) error {
+		st, err := NewWeighted(conditions...)
+		if err != nil {
+			return err
+		}
+
+		e.SigThreshold = st
+
+		return nil
+	}
+}
+
+// WithMultiWeightedThesholds sets multiple weighted signing thresholds using provided
+// string values.
+func WithMultiWeightedThesholds(thresholds ...[]string) EventOption {
+	return func(e *Event) error {
+		st, err := NewMultiWeighted(thresholds...)
+		if err != nil {
+			return err
+		}
+
+		e.SigThreshold = st
+
 		return nil
 	}
 }
@@ -140,10 +179,11 @@ func WithSeal(seal *Seal) EventOption {
 // NewInceptionEvent returns and incpetion configured with the provided parameters
 // New Inception Events will have empty 'v' and 'i' strings
 func NewInceptionEvent(opts ...EventOption) (*Event, error) {
+	st, _ := NewSigThreshold(1)
 	e := &Event{
 		EventType:                     ilkString[ICP],
 		Sequence:                      "0",
-		SigningThreshold:              "1",
+		SigThreshold:                  st,
 		AccountableDuplicityThreshold: "0",
 		Witnesses:                     []string{},
 		Config:                        []prefix.Trait{},
@@ -160,9 +200,10 @@ func NewInceptionEvent(opts ...EventOption) (*Event, error) {
 
 // NewEvent returns a new event with the specified options applied
 func NewEvent(opts ...EventOption) (*Event, error) {
+	st, _ := NewSigThreshold(1)
 	e := &Event{
 		Sequence:                      "0",
-		SigningThreshold:              "1",
+		SigThreshold:                  st,
 		AccountableDuplicityThreshold: "0",
 		Witnesses:                     []string{},
 		Config:                        []prefix.Trait{},

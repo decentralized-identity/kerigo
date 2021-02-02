@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -51,6 +52,47 @@ func TestOrder(t *testing.T) {
 	assert.Same(latest, e)
 }
 
+func TestEventAt(t *testing.T) {
+	assert := assert.New(t)
+	l := New()
+	l.Events = []*event.Message{
+		{
+			Event: &event.Event{Sequence: fmt.Sprintf("%x", 0)},
+		},
+		{
+			Event: &event.Event{Sequence: fmt.Sprintf("%x", 1)},
+		},
+		{
+			Event: &event.Event{Sequence: fmt.Sprintf("%x", 2)},
+		},
+		{
+			Event: &event.Event{Sequence: fmt.Sprintf("%x", 3)},
+		},
+	}
+
+	evnt := l.EventAt(20)
+	assert.Nil(evnt)
+
+	evnt = l.EventAt(-2)
+	assert.Nil(evnt)
+
+	evnt = l.EventAt(2)
+	if assert.NotNil(evnt) {
+		assert.Equal(fmt.Sprintf("%x", 2), evnt.Event.Sequence)
+	}
+
+	evnt = l.EventAt(0)
+	if assert.NotNil(evnt) {
+		assert.Equal(fmt.Sprintf("%x", 0), evnt.Event.Sequence)
+	}
+
+	evnt = l.EventAt(3)
+	if assert.NotNil(evnt) {
+		assert.Equal(fmt.Sprintf("%x", 3), evnt.Event.Sequence)
+	}
+
+}
+
 func TestVerifyAndApply(t *testing.T) {
 	assert := assert.New(t)
 
@@ -64,7 +106,9 @@ func TestVerifyAndApply(t *testing.T) {
 
 	msg := &event.Message{Event: &event.Event{}}
 	err := json.Unmarshal(incept, msg.Event)
-	assert.Nil(err)
+	if !assert.Nil(err) {
+		return
+	}
 
 	sigs, err := derivation.ParseAttachedSignatures(bytes.NewBuffer(inceptSig))
 	assert.Nil(err)
@@ -205,6 +249,27 @@ func TestEscrow(t *testing.T) {
 		return
 	}
 
+	// create a bad next event
+	badNext, err := event.NewEvent(
+		event.WithKeys(prefixes...),
+		event.WithType(event.IXN),
+		event.WithSequence(1),
+		event.WithDigest(digest),
+		event.WithThreshold(3),
+		event.WithDefaultVersion(event.JSON),
+	)
+	assert.Nil(err)
+
+	serialized, err = badNext.Serialize()
+	if !assert.Nil(err) {
+		return
+	}
+
+	badNextDigest, err := event.DigestString(serialized, derivation.Blake3256)
+	if !assert.Nil(err) {
+		return
+	}
+
 	// attach a single sig (need two)
 	// Doesn't need to be valid - we aren't running through the verification
 	sig, err := derivation.New(derivation.WithCode(derivation.Ed25519Attached))
@@ -212,13 +277,12 @@ func TestEscrow(t *testing.T) {
 		return
 	}
 	sig.KeyIndex = 0
-	// sigs := []*derivation.Derivation{sig}
 
 	// event has no sigs, so should be escrowed
 	err = l.Apply(&event.Message{Event: next, Signatures: []derivation.Derivation{*sig}})
 	assert.Nil(err)
-	assert.Len(l.Escrow, 1)
-	if !assert.Contains(l.Escrow, nextDigest) || !assert.Len(l.Escrow[nextDigest].Signatures, 1) {
+	assert.Len(l.Pending, 1)
+	if !assert.Contains(l.Pending, nextDigest) || !assert.Len(l.Pending[nextDigest].Signatures, 1) {
 		return
 	}
 
@@ -226,7 +290,7 @@ func TestEscrow(t *testing.T) {
 	err = l.Apply(&event.Message{Event: next, Signatures: []derivation.Derivation{*sig}})
 	assert.Nil(err)
 	assert.Len(l.Events, 1)
-	if !assert.Contains(l.Escrow, nextDigest) || !assert.Len(l.Escrow[nextDigest].Signatures, 1) {
+	if !assert.Contains(l.Pending, nextDigest) || !assert.Len(l.Pending[nextDigest].Signatures, 1) {
 		return
 	}
 
@@ -237,7 +301,7 @@ func TestEscrow(t *testing.T) {
 	err = l.Apply(&event.Message{Event: next, Signatures: []derivation.Derivation{*sig}})
 	assert.Nil(err)
 	assert.Len(l.Events, 1)
-	if !assert.Contains(l.Escrow, nextDigest) || !assert.Len(l.Escrow[nextDigest].Signatures, 2) {
+	if !assert.Contains(l.Pending, nextDigest) || !assert.Len(l.Pending[nextDigest].Signatures, 2) {
 		return
 	}
 
@@ -248,13 +312,29 @@ func TestEscrow(t *testing.T) {
 	err = l.Apply(&event.Message{Event: next, Signatures: []derivation.Derivation{*sig}})
 	assert.Nil(err)
 	assert.Len(l.Events, 2)
-	assert.Empty(l.Escrow)
+	assert.Empty(l.Pending)
+	assert.Len(l.Events[1].Signatures, 3)
+
+	// add a 4th signature = this should simply tack on to our existing sig list in the log
+	sig.KeyIndex = 3
+
+	// 4 of 3, should apply
+	err = l.Apply(&event.Message{Event: next, Signatures: []derivation.Derivation{*sig}})
+	assert.Nil(err)
+	assert.Len(l.Events, 2)
+	assert.Empty(l.Pending)
+	assert.Len(l.Events[1].Signatures, 4)
+
+	// send through our bad event
+	err = l.Apply(&event.Message{Event: badNext, Signatures: []derivation.Derivation{*sig}})
+	assert.NotNil(err)
+	assert.Len(l.Events, 2)
+	assert.Empty(l.Pending)
+	assert.Contains(l.Duplicitous, badNextDigest)
 }
 
 func TestMergeSignatures(t *testing.T) {
 	assert := assert.New(t)
-
-	sigs := []derivation.Derivation{}
 
 	d1, _ := derivation.New(derivation.WithCode(derivation.Blake2b256))
 	d1.Derive([]byte("asdf"))
@@ -262,7 +342,7 @@ func TestMergeSignatures(t *testing.T) {
 
 	new := []derivation.Derivation{*d1}
 
-	sigs = mergeSignatures(nil, new)
+	sigs := mergeSignatures(nil, new)
 	assert.Len(sigs, 1)
 
 	d2, _ := derivation.New(derivation.WithCode(derivation.Blake2b256))

@@ -2,6 +2,7 @@ package event
 
 import (
 	"fmt"
+	"math/big"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -66,7 +67,7 @@ func TestSerialize(t *testing.T) {
 		Prefix:                        "ETT9n-TCGn8XfkGkcNeNmZgdZSwHPLyDsojFXotBXdSo",
 		EventType:                     "icp",
 		Sequence:                      "0",
-		SigningThreshold:              "1",
+		SigThreshold:                  &SigThreshold{conditions: [][]*big.Rat{{big.NewRat(1, 1)}}},
 		AccountableDuplicityThreshold: "0",
 		Keys:                          []string{"DSuhyBcPZEZLK-fcw5tzHn2N46wRCG_ZOoeKtWTOunRA"},
 		Next:                          "EGAPkzNZMtX-QiVgbRbyAIZGoXvbGv9IPb0foWTZvI_4",
@@ -109,14 +110,4 @@ func TestSequenceInt(t *testing.T) {
 
 	e.Sequence = fmt.Sprintf("%x", 93840482)
 	assert.Equal(93840482, e.SequenceInt())
-}
-
-func TestSigningThresholdInt(t *testing.T) {
-	assert := assert.New(t)
-
-	e := Event{SigningThreshold: "0"}
-	assert.Equal(0, e.SigningThresholdInt())
-
-	e.SigningThreshold = fmt.Sprintf("%x", 93840482)
-	assert.Equal(93840482, e.SigningThresholdInt())
 }

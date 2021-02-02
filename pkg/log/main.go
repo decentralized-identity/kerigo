@@ -94,8 +94,9 @@ func mergeSignatures(current, new []derivation.Derivation) []derivation.Derivati
 
 // Log contains the Key Event Log for a given identifier
 type Log struct {
-	Events []*event.Message // ordered Key events
-	Escrow                  // pending events
+	Events      []*event.Message // ordered Key events
+	Pending     Escrow           // pending events
+	Duplicitous Escrow           // escrow of duplicitous events
 }
 
 // BySequence implements the sort.Inteface for log events
@@ -110,7 +111,7 @@ func (a BySequence) Less(i, j int) bool {
 }
 
 func New() *Log {
-	return &Log{Events: []*event.Message{}, Escrow: map[string]*event.Message{}}
+	return &Log{Events: []*event.Message{}, Pending: map[string]*event.Message{}, Duplicitous: map[string]*event.Message{}}
 }
 
 // Inception returns the inception event for this log
@@ -132,6 +133,15 @@ func (l *Log) Current() *event.Event {
 	sort.Sort(BySequence(l.Events))
 
 	return l.Events[len(l.Events)-1].Event
+}
+
+func (l *Log) EventAt(sequence int) *event.Message {
+	if sequence > len(l.Events)-1 || sequence < 0 {
+		return nil
+	}
+
+	sort.Sort(BySequence(l.Events))
+	return l.Events[sequence]
 }
 
 // CurrentEstablishment returns the most current establishment event
@@ -162,7 +172,13 @@ func (l *Log) Apply(e *event.Message) error {
 	}
 
 	current := l.Current()
-	if e.Event.SequenceInt() != current.SequenceInt()+1 {
+
+	// add the signature to already applied event
+	if e.Event.SequenceInt() <= current.SequenceInt() {
+		return l.AddSignatures(e)
+	} else if e.Event.SequenceInt() != current.SequenceInt()+1 {
+		// TODO: We don't support pending events ATM. Is this something we want/need?
+		// at the very least I supposed it is highly likely indicative of duplicity
 		return errors.New("invalid sequence for new event")
 	}
 
@@ -186,22 +202,58 @@ func (l *Log) Apply(e *event.Message) error {
 	}
 
 	// if the sig threshold is not met escrow
-	escrowed, err := l.Escrow.Get(e.Event)
+	escrowed, err := l.Pending.Get(e.Event)
 	if err != nil {
 		return fmt.Errorf("Unable to retrieve escrowed messages (%s)", err)
 	}
-
 	sigs := mergeSignatures(escrowed.Signatures, e.Signatures)
 
-	if len(sigs) < current.SigningThresholdInt() {
-		err = l.Escrow.Add(e)
+	if !current.SigThreshold.Satisfied(sigs) {
+		err = l.Pending.Add(e)
 		if err != nil {
 			return fmt.Errorf("unable to escrow event (%s)", err)
 		}
 	} else {
 		l.Events = append(l.Events, &event.Message{Event: e.Event, Signatures: sigs})
-		l.Escrow.Clear(*e.Event)
+		l.Pending.Clear(*e.Event)
 	}
+
+	return nil
+}
+
+func (l *Log) AddSignatures(e *event.Message) error {
+	ext := l.EventAt(e.Event.SequenceInt())
+	if ext == nil {
+		return fmt.Errorf("unable to locate existing event for sequence %s", e.Event.Sequence)
+	}
+
+	extSerialized, err := ext.Event.Serialize()
+	if err != nil {
+		return fmt.Errorf("unable to add signature to existing event (could not serialize existing event: %s)", err)
+	}
+
+	extDigest, err := event.DigestString(extSerialized, derivation.Blake3256)
+	if err != nil {
+		return fmt.Errorf("unable to add signature to existing event (could not digest existing event: %s)", err)
+	}
+
+	newSerialized, err := e.Event.Serialize()
+	if err != nil {
+		return fmt.Errorf("unable to add signature to existing event (could not serialize new event: %s)", err)
+	}
+
+	newDigest, err := event.DigestString(newSerialized, derivation.Blake3256)
+	if err != nil {
+		return fmt.Errorf("unable to add signature to existing event (could not digest new event: %s)", err)
+	}
+
+	if newDigest != extDigest {
+		// likely duplicitous Event!
+		l.Duplicitous.Add(e)
+		return errors.New("unable to add signature to existing event (new event digest does not match)")
+	}
+
+	ext.Signatures = mergeSignatures(ext.Signatures, e.Signatures)
 
 	return nil
 }

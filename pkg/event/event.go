@@ -95,7 +95,7 @@ type Event struct {
 	Sequence                      string         `json:"s"`
 	EventType                     string         `json:"t"`
 	Digest                        string         `json:"p,omitempty"`
-	SigningThreshold              string         `json:"kt,omitempty"`
+	SigThreshold                  *SigThreshold  `json:"kt,omitempty"`
 	Keys                          []string       `json:"k,omitempty"`
 	Next                          string         `json:"n,omitempty"`
 	AccountableDuplicityThreshold string         `json:"wt,omitempty"`
@@ -212,16 +212,6 @@ func (e *Event) MarshalJSON() ([]byte, error) {
 // hex sequence string
 func (e *Event) SequenceInt() int {
 	eInt, err := strconv.ParseInt(e.Sequence, 16, 64)
-	if err != nil {
-		return -1
-	}
-	return int(eInt)
-}
-
-// SigningThresholdInt returns an integer representation of
-// the hex signing threshold string
-func (e *Event) SigningThresholdInt() int {
-	eInt, err := strconv.ParseInt(e.SigningThreshold, 16, 64)
 	if err != nil {
 		return -1
 	}
