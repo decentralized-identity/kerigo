@@ -6,91 +6,11 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"time"
 
 	"github.com/decentralized-identity/kerigo/pkg/derivation"
 	"github.com/decentralized-identity/kerigo/pkg/event"
 )
-
-type Escrow map[string]*event.Message
-
-// Get returns the event message with all collected signatures
-// for the given event
-func (e Escrow) Get(evnt *event.Event) (*event.Message, error) {
-	serialized, err := evnt.Serialize()
-	if err != nil {
-		return nil, err
-	}
-
-	digest, err := event.DigestString(serialized, derivation.Blake3256)
-	if err != nil {
-		return nil, err
-	}
-
-	escrowed := &event.Message{Event: evnt}
-
-	if esc, ok := e[digest]; ok {
-		escrowed = esc
-	}
-
-	return escrowed, nil
-}
-
-// Add a message to the escrow
-func (e Escrow) Add(m *event.Message) error {
-	serialized, err := m.Event.Serialize()
-	if err != nil {
-		return err
-	}
-
-	digest, err := event.DigestString(serialized, derivation.Blake3256)
-	if err != nil {
-		return err
-	}
-
-	if _, ok := e[digest]; !ok {
-		e[digest] = m
-	} else {
-		e[digest].Signatures = mergeSignatures(e[digest].Signatures, m.Signatures)
-	}
-
-	return nil
-}
-
-// Clear all escrowed messages with the same sequence number
-// Escrowed events are indexed by the digest of their event - there could be
-// competeing versions of events if the prefix owner is being duplicitous, but
-// the first valid seen event always wins
-// Thus, this goes through and drops all competing events
-// TODO: this is an assumption - there are times where having a record of duplicitous
-// events is a good thing
-func (e Escrow) Clear(evnt event.Event) {
-	sequence := evnt.SequenceInt()
-	for i, messages := range e {
-		if messages.Event.SequenceInt() == sequence {
-			delete(e, i)
-		}
-	}
-}
-
-// mergeSignatures takes incoming signatures and merges them into a list
-// of existing signatures. The purpose is to make sure we don't accept
-// multiple signatures for the same key
-func mergeSignatures(current, new []derivation.Derivation) []derivation.Derivation {
-	for _, sig := range new {
-		found := false
-		for _, currentSig := range current {
-			if currentSig.KeyIndex == sig.KeyIndex {
-				found = true
-				break
-			}
-		}
-		if !found {
-			current = append(current, sig)
-		}
-	}
-
-	return current
-}
 
 // Log contains the Key Event Log for a given identifier
 type Log struct {
@@ -108,6 +28,15 @@ func (a BySequence) Less(i, j int) bool {
 	iS, _ := strconv.ParseInt(a[i].Event.Sequence, 16, 64)
 	jS, _ := strconv.ParseInt(a[j].Event.Sequence, 16, 64)
 	return iS < jS
+}
+
+// ByDate implements the sort.Interface for log events
+type ByDate []*event.Message
+
+func (a ByDate) Len() int      { return len(a) }
+func (a ByDate) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+func (a ByDate) Less(i, j int) bool {
+	return a[i].Seen.Before(a[j].Seen)
 }
 
 func New() *Log {
@@ -160,9 +89,15 @@ func (l *Log) CurrentEstablishment() *event.Event {
 }
 
 // Apply the provided event to the log
-// This function will confirm the sequence number and digest
-// for the new log are correct before applying
+// Apply will confirm the sequence number and digest for the new log
+// entry are correct before applying. If the event message is for an
+// event that has already been added to the log it will attempt to
+// add the provided signature. If the event is out of order (in the future)
+// it will escrow it.
 func (l *Log) Apply(e *event.Message) error {
+	// mark the event as seen
+	e.Seen = time.Now().UTC()
+
 	if len(l.Events) == 0 {
 		if e.Event.EventType != event.ICP.String() {
 			return errors.New("first event in an empty log must be an inception event")
@@ -177,27 +112,30 @@ func (l *Log) Apply(e *event.Message) error {
 	if e.Event.SequenceInt() <= current.SequenceInt() {
 		return l.AddSignatures(e)
 	} else if e.Event.SequenceInt() != current.SequenceInt()+1 {
-		// TODO: We don't support pending events ATM. Is this something we want/need?
-		// at the very least I supposed it is highly likely indicative of duplicity
-		return errors.New("invalid sequence for new event")
+		err := l.Pending.Add(e)
+		if err != nil {
+			return fmt.Errorf("unable to escrow event (%s)", err)
+		}
+
+		return nil
 	}
 
-	incomingDerivation, err := derivation.FromPrefix(e.Event.Digest)
+	inDerivation, err := derivation.FromPrefix(e.Event.Digest)
 	if err != nil {
 		return fmt.Errorf("unable to determin digest derivation (%s)", err)
 	}
 
-	cSerialized, err := current.Serialize()
+	curSerialized, err := current.Serialize()
 	if err != nil {
 		return fmt.Errorf("unable to serialize current event (%s)", err)
 	}
 
-	currentDigest, err := event.Digest(cSerialized, incomingDerivation.Code)
+	curDigest, err := event.Digest(curSerialized, inDerivation.Code)
 	if err != nil {
 		return fmt.Errorf("unable to digest current event (%s)", err)
 	}
 
-	if !bytes.Equal(currentDigest, incomingDerivation.Raw) {
+	if !bytes.Equal(curDigest, inDerivation.Raw) {
 		return errors.New("invalid digest for new event")
 	}
 
@@ -213,14 +151,35 @@ func (l *Log) Apply(e *event.Message) error {
 		if err != nil {
 			return fmt.Errorf("unable to escrow event (%s)", err)
 		}
-	} else {
-		l.Events = append(l.Events, &event.Message{Event: e.Event, Signatures: sigs})
-		l.Pending.Clear(*e.Event)
+
+		return nil
+	}
+
+	l.Events = append(l.Events, &event.Message{Event: e.Event, Signatures: sigs})
+	dups, err := l.Pending.Clear(*e.Event)
+	// we currently do not consider any of these errors that need to be addressed
+	// TODO: handle
+	if err == nil {
+		for i, _ := range dups {
+			l.Duplicitous.Add(dups[i])
+		}
+	}
+
+	// go through the pending events and apply any that are now "current"
+	current = l.Current()
+	next := l.Pending.ForSequence(current.SequenceInt() + 1)
+	if len(next) > 0 {
+		sort.Sort(ByDate(next))
+		// return nil
+		return l.Apply(next[0])
 	}
 
 	return nil
 }
 
+// AddSignatures takes an event message (event + attached signatures) and attempts
+// to merge the signatures into the log for the event. If the provided event does
+// not match the event already in the KEL it is escrowed as a duplicitous event
 func (l *Log) AddSignatures(e *event.Message) error {
 	ext := l.EventAt(e.Event.SequenceInt())
 	if ext == nil {
@@ -297,4 +256,24 @@ func (l *Log) Verify(m *event.Message) error {
 	}
 
 	return nil
+}
+
+// mergeSignatures takes incoming signatures and merges them into a list
+// of existing signatures. The purpose is to make sure we don't accept
+// multiple signatures for the same key
+func mergeSignatures(current, new []derivation.Derivation) []derivation.Derivation {
+	for _, sig := range new {
+		found := false
+		for _, currentSig := range current {
+			if currentSig.KeyIndex == sig.KeyIndex {
+				found = true
+				break
+			}
+		}
+		if !found {
+			current = append(current, sig)
+		}
+	}
+
+	return current
 }

@@ -15,6 +15,15 @@ import (
 	"github.com/decentralized-identity/kerigo/pkg/prefix"
 )
 
+// TODO: move these to approved test vectors in main keri repo
+
+var incept = []byte(`{"v":"KERI10JSON0000e6_","i":"ENqFtH6_cfDg8riLZ-GDvDaCKVn6clOJa7ZXXVXSWpRY","s":"0","t":"icp","kt":"1","k":["DSuhyBcPZEZLK-fcw5tzHn2N46wRCG_ZOoeKtWTOunRA"],"n":"EPYuj8mq_PYYsoBKkzX1kxSPGYBWaIya3slgCOyOtlqU","wt":"0","w":[],"c":[]}`)
+var inceptSig = []byte(`-AABAAMiMnE1gmjqoEuDmhbU7aqYBUqKCqAmrHPQB-tPUKSbH_IUXsbglEQ6TGlQT1k7G4VlnKoczYBUd7CPJuo5TnDg`)
+var rot = []byte(`{"v":"KERI10JSON000122_","i":"ENqFtH6_cfDg8riLZ-GDvDaCKVn6clOJa7ZXXVXSWpRY","s":"1","t":"rot","p":"E9ZTKOhr-lqB7jbBMBpUIdMpfWvEswoMoc5UrwCRcTSc","kt":"1","k":["DVcuJOOJF1IE8svqEtrSuyQjGTd2HhfAkt9y2QkUtFJI"],"n":"E-dapdcC6XR1KWmWDsNl4J_OxcGxNZw1Xd95JH5a34fI","wt":"0","wr":[],"wa":[],"a":[]}`)
+var rotSig = []byte(`-AABAA91xjNugSykLy0_IZsvkUxkVnZVlNqqhhZT5_VT9wK0pccNrD6i_3h_lTK5ZmXr0wsN6zn-4KMw3ZtYQ2bjbuDQ`)
+var ixn = []byte(`{"v":"KERI10JSON000098_","i":"ENqFtH6_cfDg8riLZ-GDvDaCKVn6clOJa7ZXXVXSWpRY","s":"2","t":"ixn","p":"ELWbb2Oun3FTpWZqHYmeefM5B-11nZQBsxPfufyjJHy4","a":[]}`)
+var ixnSig = []byte(`-AABAAqxzoxk4rltuP41tB8wEpHFC4Yd1TzhOGfuhlylbDFAm73jB2emdvaLjUP6FrHxiPqS2CcbAWaVNsmii80KJEBw`)
+
 func TestOrder(t *testing.T) {
 	assert := assert.New(t)
 	l := New()
@@ -96,13 +105,7 @@ func TestEventAt(t *testing.T) {
 func TestVerifyAndApply(t *testing.T) {
 	assert := assert.New(t)
 
-	// play the events generated from the keripy implementation
-	// TODO: move these to approved test vectors in main keri repo
-
 	l := New()
-
-	incept := []byte(`{"v":"KERI10JSON0000e6_","i":"ENqFtH6_cfDg8riLZ-GDvDaCKVn6clOJa7ZXXVXSWpRY","s":"0","t":"icp","kt":"1","k":["DSuhyBcPZEZLK-fcw5tzHn2N46wRCG_ZOoeKtWTOunRA"],"n":"EPYuj8mq_PYYsoBKkzX1kxSPGYBWaIya3slgCOyOtlqU","wt":"0","w":[],"c":[]}`)
-	inceptSig := []byte(`-AABAAMiMnE1gmjqoEuDmhbU7aqYBUqKCqAmrHPQB-tPUKSbH_IUXsbglEQ6TGlQT1k7G4VlnKoczYBUd7CPJuo5TnDg`)
 
 	msg := &event.Message{Event: &event.Event{}}
 	err := json.Unmarshal(incept, msg.Event)
@@ -119,17 +122,16 @@ func TestVerifyAndApply(t *testing.T) {
 	err = l.Verify(msg)
 	assert.Nil(err)
 
+	// apply the inception event
 	err = l.Apply(msg)
 	assert.Nil(err)
 	assert.Len(l.Events, 1)
-
-	rot := []byte(`{"v":"KERI10JSON000122_","i":"ENqFtH6_cfDg8riLZ-GDvDaCKVn6clOJa7ZXXVXSWpRY","s":"1","t":"rot","p":"E9ZTKOhr-lqB7jbBMBpUIdMpfWvEswoMoc5UrwCRcTSc","kt":"1","k":["DVcuJOOJF1IE8svqEtrSuyQjGTd2HhfAkt9y2QkUtFJI"],"n":"E-dapdcC6XR1KWmWDsNl4J_OxcGxNZw1Xd95JH5a34fI","wt":"0","wr":[],"wa":[],"a":[]}`)
-	rotSig := []byte(`-AABAA91xjNugSykLy0_IZsvkUxkVnZVlNqqhhZT5_VT9wK0pccNrD6i_3h_lTK5ZmXr0wsN6zn-4KMw3ZtYQ2bjbuDQ`)
 
 	msg = &event.Message{Event: &event.Event{}}
 	err = json.Unmarshal(rot, msg.Event)
 	assert.Nil(err)
 
+	// #2 rotations
 	sigs, err = derivation.ParseAttachedSignatures(bytes.NewBuffer(rotSig))
 	assert.Nil(err)
 	assert.Len(sigs, 1)
@@ -147,12 +149,11 @@ func TestVerifyAndApply(t *testing.T) {
 	err = l.Verify(msg)
 	assert.Nil(err)
 
-	// invalid sequence - should not apply
+	// invalid sequence - should be added to the pending escrow
 	msg.Event.Sequence = "42"
 	err = l.Apply(msg)
-	if assert.NotNil(err) {
-		assert.Equal("invalid sequence for new event", err.Error())
-	}
+	assert.Nil(err)
+	assert.Len(l.Pending, 1)
 	assert.Len(l.Events, 1)
 
 	// invalid digest, should not apply
@@ -170,9 +171,14 @@ func TestVerifyAndApply(t *testing.T) {
 	assert.Nil(err)
 	assert.Len(l.Events, 2)
 
-	ixn := []byte(`{"v":"KERI10JSON000098_","i":"ENqFtH6_cfDg8riLZ-GDvDaCKVn6clOJa7ZXXVXSWpRY","s":"2","t":"ixn","p":"ELWbb2Oun3FTpWZqHYmeefM5B-11nZQBsxPfufyjJHy4","a":[]}`)
-	ixnSig := []byte(`-AABAAqxzoxk4rltuP41tB8wEpHFC4Yd1TzhOGfuhlylbDFAm73jB2emdvaLjUP6FrHxiPqS2CcbAWaVNsmii80KJEBw`)
+	// apply again, should not change events length
+	err = l.Apply(msg)
+	assert.Nil(err)
+	if assert.Len(l.Events, 2) {
+		assert.Len(l.Events[1].Signatures, 1)
+	}
 
+	// Interaction event
 	msg = &event.Message{Event: &event.Event{}}
 	err = json.Unmarshal(ixn, msg.Event)
 	assert.Nil(err)
@@ -185,13 +191,9 @@ func TestVerifyAndApply(t *testing.T) {
 
 	err = l.Verify(msg)
 	assert.Nil(err)
-
-	err = l.Apply(msg)
-	assert.Nil(err)
-	assert.Len(l.Events, 3)
 }
 
-func TestEscrow(t *testing.T) {
+func TestMultiSigApply(t *testing.T) {
 	assert := assert.New(t)
 
 	keys, err := newKeys(3)
@@ -331,6 +333,133 @@ func TestEscrow(t *testing.T) {
 	assert.Len(l.Events, 2)
 	assert.Empty(l.Pending)
 	assert.Contains(l.Duplicitous, badNextDigest)
+}
+
+func TestEscrowApply(t *testing.T) {
+	assert := assert.New(t)
+
+	keys, err := newKeys(3)
+	if !assert.Nil(err) {
+		return
+	}
+
+	prefixes := []prefix.Prefix{}
+	for _, k := range keys {
+		prefixes = append(prefixes, k.pre)
+	}
+
+	e, err := event.NewInceptionEvent(
+		event.WithKeys(prefixes...),
+		event.WithThreshold(2),
+		event.WithDefaultVersion(event.JSON),
+	)
+
+	assert.Nil(err)
+
+	l := New()
+	err = l.Apply(&event.Message{Event: e})
+	if !assert.Nil(err) || !assert.Len(l.Events, 1) {
+		return
+	}
+
+	// create a valid next event
+	serialized, err := e.Serialize()
+	if !assert.Nil(err) {
+		return
+	}
+
+	digest, err := event.DigestString(serialized, derivation.Blake3256)
+	if !assert.Nil(err) {
+		return
+	}
+
+	next, err := event.NewEvent(
+		event.WithKeys(prefixes...),
+		event.WithType(event.ROT),
+		event.WithSequence(1),
+		event.WithDigest(digest),
+		event.WithThreshold(1),
+		event.WithDefaultVersion(event.JSON),
+	)
+	assert.Nil(err)
+
+	serialized, err = next.Serialize()
+	if !assert.Nil(err) {
+		return
+	}
+
+	nextDigest, err := event.DigestString(serialized, derivation.Blake3256)
+	if !assert.Nil(err) {
+		return
+	}
+
+	// create a valid event for after next.
+	nextNext, err := event.NewEvent(
+		event.WithKeys(prefixes...),
+		event.WithType(event.ROT),
+		event.WithSequence(2),
+		event.WithDigest(nextDigest),
+		event.WithThreshold(1),
+		event.WithDefaultVersion(event.JSON),
+	)
+	assert.Nil(err)
+
+	// create a duplicitous nextNext event
+	dupNextNext, err := event.NewEvent(
+		event.WithKeys(prefixes[0]),
+		event.WithType(event.ROT),
+		event.WithSequence(2),
+		event.WithDigest(nextDigest),
+		event.WithThreshold(3),
+		event.WithDefaultVersion(event.JSON),
+	)
+	assert.Nil(err)
+
+	// attach a single sig (need two)
+	// Doesn't need to be valid - we aren't running through the verification
+	sig, err := derivation.New(derivation.WithCode(derivation.Ed25519Attached))
+	if !assert.Nil(err) {
+		return
+	}
+	sig.KeyIndex = 0
+
+	// apply nextNext - it will be out of order, so should escrow under pending.
+	err = l.Apply(&event.Message{Event: nextNext, Signatures: []derivation.Derivation{*sig}})
+	assert.Nil(err)
+	assert.Len(l.Pending, 1)
+	assert.Len(l.Events, 1)
+
+	// apply dupNextNext - it will be out of order, so should also escrow under pending.
+	err = l.Apply(&event.Message{Event: dupNextNext, Signatures: []derivation.Derivation{*sig}})
+	assert.Nil(err)
+	assert.Len(l.Pending, 2)
+	assert.Len(l.Events, 1)
+
+	// apply Next with only one sig. This should escrow to pending
+	err = l.Apply(&event.Message{Event: next, Signatures: []derivation.Derivation{*sig}})
+	assert.Nil(err)
+	assert.Len(l.Pending, 3)
+	assert.Len(l.Events, 1)
+
+	// apply next with another sig, this will apply it
+	// this should also apply the pending nextNext event since
+	// next has a threshold of 1 and we already have that many
+	// signatures in escrow. It should also put dupNextNext into the
+	// duplicitous escrow since it arrived after nextNext.
+	// Thus, we should have all 3 events applied and nothing in pending
+	sig.KeyIndex = 1
+	err = l.Apply(&event.Message{Event: next, Signatures: []derivation.Derivation{*sig}})
+	assert.Nil(err)
+	assert.Len(l.Pending, 0)
+	if assert.Len(l.Events, 3) {
+		assert.Equal(nextNext, l.Events[2].Event)
+	}
+	if assert.Len(l.Duplicitous, 1) {
+		m, err := l.Duplicitous.Get(dupNextNext)
+		assert.Nil(err)
+		assert.Equal(dupNextNext, m.Event)
+	}
+
 }
 
 func TestMergeSignatures(t *testing.T) {
