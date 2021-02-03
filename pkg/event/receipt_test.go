@@ -39,8 +39,7 @@ func TestTransferable(t *testing.T) {
 	vrcBytes, err := vrc.Serialize()
 	assert.NoError(t, err)
 
-	//TODO:  get the seal digest of the last establishment event to match
-	assert.Equal(t, len(expectedVRCBytes), len(vrcBytes))
+	assert.Equal(t, expectedVRCBytes, string(vrcBytes))
 }
 
 func incept(t *testing.T, secret, next string) *Event {

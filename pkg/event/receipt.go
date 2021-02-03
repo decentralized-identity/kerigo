@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/decentralized-identity/kerigo/pkg/derivation"
+	"github.com/decentralized-identity/kerigo/pkg/version"
 )
 
 // Recipt generates a receipt for the provided event
@@ -35,6 +36,13 @@ func TransferableReceipt(event *Event, estEvent *Event, code derivation.Code) (*
 		return nil, err
 	}
 	receipt.Digest = eventDigest
+
+	eventBytes, err := Serialize(receipt, JSON)
+	if err != nil {
+		return nil, err
+	}
+
+	receipt.Version = VersionString(JSON, version.Code(), len(eventBytes))
 
 	return receipt, nil
 }

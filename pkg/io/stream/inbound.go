@@ -64,7 +64,7 @@ func (r *Inbound) Start() (<-chan *event.Message, error) {
 			r.addConnection(conn)
 			go func() {
 				err := r.handleConnection(conn)
-				r.remoteConnection(conn)
+				r.removeConnection(conn)
 				log.Printf("connection closed with err: %v\n", err)
 			}()
 		}
@@ -142,7 +142,7 @@ func (r *Inbound) addConnection(conn net.Conn) {
 	r.conns = append(r.conns, conn)
 }
 
-func (r *Inbound) remoteConnection(conn net.Conn) {
+func (r *Inbound) removeConnection(conn net.Conn) {
 	r.connLock.Lock()
 	defer r.connLock.Unlock()
 
@@ -157,4 +157,18 @@ func (r *Inbound) remoteConnection(conn net.Conn) {
 	if idx != -1 {
 		r.conns = append(r.conns[:idx], r.conns[idx+1:]...)
 	}
+}
+
+func (r *Inbound) Write(msg *event.Message) error {
+	data, err := msg.Serialize()
+	if err != nil {
+		return errors.Wrap(err, "unable to serialize message for stream outbound")
+	}
+
+	_, err = r.conns[0].Write(data)
+	if err != nil {
+		return errors.Wrap(err, "unable to right message to stream outbound")
+	}
+
+	return nil
 }

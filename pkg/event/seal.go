@@ -1,6 +1,8 @@
 package event
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/decentralized-identity/kerigo/pkg/derivation"
@@ -57,7 +59,7 @@ func NewEventSeal(dig, pre, sn string) (*Seal, error) {
 }
 
 func SealEstablishment(evt *Event) (*Seal, error) {
-	ser, err := Serialize(evt, EDS)
+	ser, err := evt.Serialize()
 	if err != nil {
 		return nil, fmt.Errorf("error serializing establshment event to extracted data set: %v", err)
 	}
@@ -117,4 +119,45 @@ func WithSealSequence(sn string) SealOption {
 		s.Sequence = sn
 		return nil
 	}
+}
+
+type SealArray []*Seal
+
+func (r *SealArray) UnmarshalJSON(b []byte) error {
+	a := []*Seal(*r)
+	if len(b) == 0 {
+		*r = nil
+		return nil
+	}
+
+	if b[0] == '[' {
+		err := json.Unmarshal(b, &a)
+		if err != nil {
+			return err
+		}
+
+		*r = a
+		return nil
+	} else if b[0] == '{' {
+		s := &Seal{}
+		err := json.Unmarshal(b, s)
+		if err != nil {
+			return err
+		}
+
+		*r = []*Seal{s}
+
+		return nil
+	} else {
+		return errors.New("unmarshal of Seal Array")
+	}
+}
+
+func (r *SealArray) MarshalJSON() ([]byte, error) {
+	a := []*Seal(*r)
+	if len(a) == 1 {
+		return json.Marshal(a[0])
+	}
+
+	return json.Marshal(a)
 }

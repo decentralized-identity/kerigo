@@ -1,6 +1,8 @@
 package derivation
 
-import "strings"
+import (
+	"strings"
+)
 
 type Code int
 
@@ -192,7 +194,7 @@ func (c Code) Name() string {
 // Default derivation data: used for calculating total data length
 // in some KERI functions
 func (c Code) Default() string {
-	return string(append([]byte(c.String()), []byte(strings.Repeat("A", c.PrefixBase64Length()-len(c.String())))...))
+	return strings.Repeat("#", c.PrefixBase64Length())
 }
 
 // SelfAdressing derivaitons

@@ -104,7 +104,7 @@ type Event struct {
 	Cut                           []string       `json:"wr,omitempty"`
 	Config                        []prefix.Trait `json:"c,omitempty"`
 	Permissions                   []interface{}  `json:"perm,omitempty"`
-	Seals                         []*Seal        `json:"a,omitempty"`
+	Seals                         SealArray      `json:"a,omitempty"`
 	DelegatorSeal                 *Seal          `json:"da,omitempty"`
 }
 
@@ -123,7 +123,7 @@ func (e *Event) MarshalJSON() ([]byte, error) {
 	switch e.EventType {
 
 	case ROT.String(), DRT.String():
-		// roation events need cuts, adds, and data
+		// rotation events need cuts, adds, and data
 		if e.Cut == nil {
 			e.Cut = []string{}
 		}
@@ -131,14 +131,14 @@ func (e *Event) MarshalJSON() ([]byte, error) {
 			e.Add = []string{}
 		}
 		if e.Seals == nil {
-			e.Seals = []*Seal{}
+			e.Seals = SealArray{}
 		}
 
 		return json.Marshal(&struct {
 			*EventAlias
-			Cut   []string `json:"wr"`
-			Add   []string `json:"wa"`
-			Seals []*Seal  `json:"a"`
+			Cut   []string  `json:"wr"`
+			Add   []string  `json:"wa"`
+			Seals SealArray `json:"a"`
 		}{
 			EventAlias: (*EventAlias)(e),
 			Cut:        e.Cut,
@@ -149,11 +149,11 @@ func (e *Event) MarshalJSON() ([]byte, error) {
 	case IXN.String():
 		// IXN events need data
 		if e.Seals == nil {
-			e.Seals = []*Seal{}
+			e.Seals = SealArray{}
 		}
 		return json.Marshal(&struct {
 			*EventAlias
-			Seals []*Seal `json:"a"`
+			Seals SealArray `json:"a"`
 		}{
 			EventAlias: (*EventAlias)(e),
 			Seals:      e.Seals,
@@ -179,7 +179,7 @@ func (e *Event) MarshalJSON() ([]byte, error) {
 		})
 	case VRC.String():
 		// Receipt news single Seal
-		if e.Seals == nil || len(e.Seals) != 1 {
+		if e.Seals == nil {
 			return nil, errors.New("unable to serialize a receipt without a seal")
 		}
 
@@ -317,6 +317,7 @@ func Deserialize(data []byte, from FORMAT) (*Event, error) {
 		evt := &Event{}
 		err := json.Unmarshal(data, evt)
 		if err != nil {
+			fmt.Println(string(data))
 			return nil, errors.Wrap(err, "unable to unmarshal event from JSON")
 		}
 		return evt, nil

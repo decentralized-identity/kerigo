@@ -51,9 +51,10 @@ func TestEventLocationSeal(t *testing.T) {
 }
 
 func TestSealEstablishment(t *testing.T) {
-	expectedBytes := `{"i":"ENqFtH6_cfDg8riLZ-GDvDaCKVn6clOJa7ZXXVXSWpRY","s":"0","d":"EW3x3YgiqRUhHq1arcoqm8k1A1rqeyexeZMVLrz2JkXc"}`
+	expectedBytes := `{"i":"ENqFtH6_cfDg8riLZ-GDvDaCKVn6clOJa7ZXXVXSWpRY","s":"0","d":"EwUK1OhZGRyPaAt5Td-JzZkzSaDscKd_CtEKeUuwreHQ"}`
 
 	evt := &Event{
+		Version:   "KERI10JSON0000e6_",
 		Prefix:    "ENqFtH6_cfDg8riLZ-GDvDaCKVn6clOJa7ZXXVXSWpRY",
 		Sequence:  "0",
 		EventType: "icp",
