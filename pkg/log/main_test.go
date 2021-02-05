@@ -541,3 +541,82 @@ func TestReceipts(t *testing.T) {
 	rcpts := kel.ReceiptsForEvent(icp)
 	assert.Len(t, rcpts, 1)
 }
+
+func TestKeyState(t *testing.T) {
+	assert := assert.New(t)
+
+	l := Log{
+		Events: []*event.Message{
+			{Event: &event.Event{
+				Version:   event.DefaultVersionString(event.JSON),
+				EventType: "icp",
+				Sequence:  "0",
+				Keys:      []string{"k1.1", "k1.2", "k1.3"},
+				Next:      "next1",
+				Witnesses: []string{"w1"},
+			}},
+			{Event: &event.Event{
+				Version:    event.DefaultVersionString(event.JSON),
+				EventType:  "rot",
+				Sequence:   "1",
+				Keys:       []string{"k2.1", "k2.2", "k2.3"},
+				Next:       "next2",
+				AddWitness: []string{"w2", "w3", "w4"},
+			}},
+			{Event: &event.Event{
+				Version:   event.DefaultVersionString(event.JSON),
+				EventType: "rot",
+				Sequence:  "2",
+				Keys:      []string{"k2.1", "k2.2", "k2.3"},
+				Next:      "next2",
+			}},
+
+			{Event: &event.Event{
+				Version:   event.DefaultVersionString(event.JSON),
+				EventType: "ixn",
+				Sequence:  "3",
+				Keys:      []string{"k2.1", "k2.2", "k2.3"},
+				Next:      "next2",
+			}},
+
+			{Event: &event.Event{
+				Version:       event.DefaultVersionString(event.JSON),
+				EventType:     "rot",
+				Sequence:      "4",
+				Keys:          []string{"k3.1"},
+				Next:          "next3",
+				RemoveWitness: []string{"w3"},
+				AddWitness:    []string{"w42"},
+			}},
+
+			{Event: &event.Event{
+				Version:   event.DefaultVersionString(event.JSON),
+				EventType: "ixn",
+				Sequence:  "5",
+				Keys:      []string{"k2.1", "k2.2", "k2.3"},
+				Next:      "next2",
+			}},
+		},
+	}
+
+	est := l.EstablishmentEvents()
+	assert.Len(est, 4)
+
+	ks, err := l.KeyState()
+	assert.Nil(err)
+
+	assert.Equal([]string{"k3.1"}, ks.Keys)
+	assert.Equal("next3", ks.Next)
+	assert.Equal([]string{"w1", "w2", "w4", "w42"}, ks.Witnesses)
+	if assert.NotNil(ks.LastEstablishment) {
+		assert.Equal("4", ks.LastEstablishment.Sequence)
+		assert.Equal("E7XVOGJzd708dfstENmKLesFIhx-d2nZWvR-5sRWgn-w", ks.LastEstablishment.Digest)
+	}
+
+	if assert.NotNil(ks.LastEvent) {
+		assert.Equal("5", ks.LastEvent.Sequence)
+		assert.Equal("EUNnj97OtQWJNZEcA1S1Ueh2oiUPUu77fBekoI4iR_yw", ks.LastEvent.Digest)
+		assert.Equal("ixn", ks.LastEvent.EventType)
+	}
+
+}

@@ -63,16 +63,16 @@ func TestSerialize(t *testing.T) {
 	expected := []byte(`{"v":"KERI10JSON0000fb_","i":"ETT9n-TCGn8XfkGkcNeNmZgdZSwHPLyDsojFXotBXdSo","s":"0","t":"icp","kt":"1","k":["DSuhyBcPZEZLK-fcw5tzHn2N46wRCG_ZOoeKtWTOunRA"],"n":"EGAPkzNZMtX-QiVgbRbyAIZGoXvbGv9IPb0foWTZvI_4","wt":"0","w":[],"c":[]}`)
 
 	e := &Event{
-		Version:                       "KERI10JSON0000fb_",
-		Prefix:                        "ETT9n-TCGn8XfkGkcNeNmZgdZSwHPLyDsojFXotBXdSo",
-		EventType:                     "icp",
-		Sequence:                      "0",
-		SigThreshold:                  &SigThreshold{conditions: [][]*big.Rat{{big.NewRat(1, 1)}}},
-		AccountableDuplicityThreshold: "0",
-		Keys:                          []string{"DSuhyBcPZEZLK-fcw5tzHn2N46wRCG_ZOoeKtWTOunRA"},
-		Next:                          "EGAPkzNZMtX-QiVgbRbyAIZGoXvbGv9IPb0foWTZvI_4",
-		Config:                        []prefix.Trait{},
-		Witnesses:                     []string{},
+		Version:          "KERI10JSON0000fb_",
+		Prefix:           "ETT9n-TCGn8XfkGkcNeNmZgdZSwHPLyDsojFXotBXdSo",
+		EventType:        "icp",
+		Sequence:         "0",
+		SigThreshold:     &SigThreshold{conditions: [][]*big.Rat{{big.NewRat(1, 1)}}},
+		WitnessThreshold: "0",
+		Keys:             []string{"DSuhyBcPZEZLK-fcw5tzHn2N46wRCG_ZOoeKtWTOunRA"},
+		Next:             "EGAPkzNZMtX-QiVgbRbyAIZGoXvbGv9IPb0foWTZvI_4",
+		Config:           []prefix.Trait{},
+		Witnesses:        []string{},
 	}
 
 	jsonSer, err := Serialize(e, JSON)

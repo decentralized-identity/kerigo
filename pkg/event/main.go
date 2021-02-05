@@ -123,10 +123,10 @@ func WithMultiWeightedThesholds(thresholds ...[]string) EventOption {
 	}
 }
 
-// WithAccountableDuplicityThreshold sets the witness duplicity threshold for the event
-func WithAccountableDuplicityThreshold(threshold int) EventOption {
+// WithWitnessThreshold sets the witness duplicity threshold for the event
+func WithWitnessThreshold(threshold int) EventOption {
 	return func(e *Event) error {
-		e.AccountableDuplicityThreshold = fmt.Sprintf("%x", threshold)
+		e.WitnessThreshold = fmt.Sprintf("%x", threshold)
 		return nil
 	}
 }
@@ -181,12 +181,12 @@ func WithSeal(seal *Seal) EventOption {
 func NewInceptionEvent(opts ...EventOption) (*Event, error) {
 	st, _ := NewSigThreshold(1)
 	e := &Event{
-		EventType:                     ilkString[ICP],
-		Sequence:                      "0",
-		SigThreshold:                  st,
-		AccountableDuplicityThreshold: "0",
-		Witnesses:                     []string{},
-		Config:                        []prefix.Trait{},
+		EventType:        ilkString[ICP],
+		Sequence:         "0",
+		SigThreshold:     st,
+		WitnessThreshold: "0",
+		Witnesses:        []string{},
+		Config:           []prefix.Trait{},
 	}
 	for _, o := range opts {
 		err := o(e)
@@ -202,11 +202,11 @@ func NewInceptionEvent(opts ...EventOption) (*Event, error) {
 func NewEvent(opts ...EventOption) (*Event, error) {
 	st, _ := NewSigThreshold(1)
 	e := &Event{
-		Sequence:                      "0",
-		SigThreshold:                  st,
-		AccountableDuplicityThreshold: "0",
-		Witnesses:                     []string{},
-		Config:                        []prefix.Trait{},
+		Sequence:         "0",
+		SigThreshold:     st,
+		WitnessThreshold: "0",
+		Witnesses:        []string{},
+		Config:           []prefix.Trait{},
 	}
 
 	for _, o := range opts {
