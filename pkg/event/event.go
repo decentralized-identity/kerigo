@@ -239,7 +239,7 @@ func (e *Event) WitnessDerivation(index int) (*derivation.Derivation, error) {
 }
 
 func (e *Event) GetDigest() (string, error) {
-	ser, err := Serialize(e, EDS)
+	ser, err := e.Serialize()
 
 	der, err := derivation.New(derivation.WithCode(derivation.Blake3256))
 	if err != nil {
@@ -317,7 +317,6 @@ func Deserialize(data []byte, from FORMAT) (*Event, error) {
 		evt := &Event{}
 		err := json.Unmarshal(data, evt)
 		if err != nil {
-			fmt.Println(string(data))
 			return nil, errors.Wrap(err, "unable to unmarshal event from JSON")
 		}
 		return evt, nil

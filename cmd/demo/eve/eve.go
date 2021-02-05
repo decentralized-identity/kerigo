@@ -57,7 +57,7 @@ func main() {
 
 	fmt.Printf("Direct Mode demo of Eve as %s on TCP port 5621 to port 5620\n\n\n", kerl.Prefix())
 
-	err = kerl.HandleInboundDirect(inb)
+	err = kerl.HandleDirect(inb)
 	if err != nil {
 		panic(err)
 	}

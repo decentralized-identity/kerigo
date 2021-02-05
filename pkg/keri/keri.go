@@ -3,6 +3,7 @@ package keri
 import (
 	"encoding/json"
 	"log"
+	"sync"
 
 	"github.com/pkg/errors"
 
@@ -15,14 +16,16 @@ import (
 type Option func(*Keri) error
 
 type Keri struct {
-	pre    string
-	kms    *keymanager.KeyManager
-	reg    *Registry
-	direct []*directConn
+	pre string
+	kms *keymanager.KeyManager
+	reg *Registry
+
+	directLock sync.RWMutex
+	direct     []*directConn
 }
 
 type directConn struct {
-	in io.InboundTransport
+	in io.Transport
 }
 
 func New(kms *keymanager.KeyManager, opts ...Option) (*Keri, error) {
@@ -30,7 +33,7 @@ func New(kms *keymanager.KeyManager, opts ...Option) (*Keri, error) {
 		kms: kms,
 	}
 
-	reg, err := NewRegistry()
+	reg, err := NewRegistry(nil)
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to create Keri registry")
 	}
@@ -74,7 +77,24 @@ func (r *Keri) Prefix() string {
 }
 
 func (r *Keri) Sign(data []byte) ([]byte, error) {
-	return nil, errors.New("not implemented")
+	return r.kms.Signer()(data)
+}
+
+func (r *Keri) Inception() (*event.Message, error) {
+	kel, _ := r.reg.KEL(r.pre)
+	icp := kel.Inception()
+
+	sig, err := r.sign(icp)
+	if err != nil {
+		return nil, err
+	}
+
+	msg := &event.Message{
+		Event:      icp,
+		Signatures: []derivation.Derivation{*sig},
+	}
+
+	return msg, nil
 }
 
 func (r *Keri) Rotate() (*event.Event, error) {
@@ -85,28 +105,32 @@ func (r *Keri) Interaction(payload []byte) (*event.Event, error) {
 	return nil, errors.New("not implemented")
 }
 
-func (r *Keri) HandleInboundDirect(in io.InboundTransport) error {
+func (r *Keri) HandleDirect(in io.Transport) error {
 	ch, err := in.Start()
 	if err != nil {
 		return errors.Wrap(err, "unable to start Keri transport")
 	}
 
-	rcpts, err := r.reg.Process(ch)
-	if err != nil {
-		return errors.Wrap(err, "unable to start process loop for direct connection")
+	for conn := range ch {
+		rcpts, err := r.reg.Process(conn.Msgs())
+		if err != nil {
+			return errors.Wrap(err, "unable to start process loop for direct connection")
+		}
+
+		go r.generateReceipts(rcpts, conn)
+
+		conn := &directConn{
+			in: in,
+		}
+
+		r.directLock.RLock()
+		r.direct = append(r.direct, conn)
+		r.directLock.RUnlock()
 	}
-
-	go r.generateReceipts(rcpts, in)
-
-	conn := &directConn{
-		in: in,
-	}
-
-	r.direct = append(r.direct, conn)
 	return nil
 }
 
-func (r *Keri) generateReceipts(rcpts <-chan *event.Event, in io.InboundTransport) {
+func (r *Keri) generateReceipts(rcpts <-chan *event.Event, in io.Conn) {
 	for evt := range rcpts {
 		kel, err := r.reg.KEL(r.pre)
 		if err != nil {
@@ -115,11 +139,21 @@ func (r *Keri) generateReceipts(rcpts <-chan *event.Event, in io.InboundTranspor
 		}
 
 		if evt.ILK() == event.ICP {
+			rcpts := kel.ReceiptsForEvent(evt)
+			found := false
+			for _, rcpt := range rcpts {
+				if rcpt.Event.Digest == evt.Digest {
+					found = true
+					break
+				}
+			}
 
-			err := r.sendOwnInception(in)
-			if err != nil {
-				log.Println("Unable to send ICP to outbound", err)
-				continue
+			if !found {
+				err := r.sendOwnInception(in)
+				if err != nil {
+					log.Println("Unable to send ICP to outbound", err)
+					continue
+				}
 			}
 		}
 
@@ -163,12 +197,15 @@ func (r *Keri) generateReceipts(rcpts <-chan *event.Event, in io.InboundTranspor
 }
 
 func (r *Keri) Close() {
+	r.directLock.Lock()
+	defer r.directLock.Unlock()
+
 	for _, conn := range r.direct {
 		conn.in.Stop()
 	}
 }
 
-func (r *Keri) sendOwnInception(in io.InboundTransport) error {
+func (r *Keri) sendOwnInception(in io.Conn) error {
 	kel, err := r.reg.KEL(r.pre)
 	if err != nil {
 		return errors.Wrap(err, "unexpected error getting current KEL")

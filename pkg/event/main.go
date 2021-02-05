@@ -198,27 +198,6 @@ func NewInceptionEvent(opts ...EventOption) (*Event, error) {
 	return e, nil
 }
 
-// NewRotationEvent returns and incpetion configured with the provided parameters
-// New Rotation Events will have empty 'v' and 'i' strings
-func NewRotationEvent(opts ...EventOption) (*Event, error) {
-	e := &Event{
-		EventType:                     ilkString[ICP],
-		Sequence:                      "0",
-		SigningThreshold:              "1",
-		AccountableDuplicityThreshold: "0",
-		Witnesses:                     []string{},
-		Config:                        []prefix.Trait{},
-	}
-	for _, o := range opts {
-		err := o(e)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return e, nil
-}
-
 // NewEvent returns a new event with the specified options applied
 func NewEvent(opts ...EventOption) (*Event, error) {
 	st, _ := NewSigThreshold(1)

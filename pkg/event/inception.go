@@ -2,7 +2,6 @@ package event
 
 import (
 	"crypto/ed25519"
-	"fmt"
 
 	"github.com/decentralized-identity/kerigo/pkg/derivation"
 	"github.com/decentralized-identity/kerigo/pkg/prefix"
@@ -34,7 +33,9 @@ func Incept(signing ed25519.PublicKey, next *derivation.Derivation) (*Event, err
 	icp.Version = VersionString(JSON, version.Code(), len(eventBytes))
 
 	ser, err := Serialize(icp, JSON)
-	fmt.Println(string(ser))
+	if err != nil {
+		return nil, err
+	}
 
 	saDerivation, err := derivation.New(derivation.WithCode(derivation.Blake3256))
 	if err != nil {

@@ -1,136 +1,77 @@
 package main
 
 import (
-	"bytes"
-	"crypto/ed25519"
-	"encoding/base64"
 	"fmt"
+	"time"
 
-	"github.com/golang/protobuf/proto"
-	"github.com/google/tink/go/insecurecleartextkeyset"
+	"github.com/google/tink/go/aead"
 	"github.com/google/tink/go/keyset"
-	ed25519pb "github.com/google/tink/go/proto/ed25519_go_proto"
-	"github.com/google/tink/go/signature"
-	"github.com/google/tink/go/signature/subtle"
 
-	"github.com/decentralized-identity/kerigo/pkg/derivation"
+	"github.com/decentralized-identity/kerigo/pkg/db/mem"
+	"github.com/decentralized-identity/kerigo/pkg/io/stream"
+	"github.com/decentralized-identity/kerigo/pkg/keri"
+	"github.com/decentralized-identity/kerigo/pkg/keymanager"
+)
+
+var (
+	secrets = []string{
+		"ArwXoACJgOleVZ2PY7kXn7rA0II0mHYDhc6WrBH8fDAc",
+		"A6zz7M08-HQSFq92sJ8KJOT2cZ47x7pXFQLPB0pckB3Q",
+		"AcwFTk-wgk3ZT2buPRIbK-zxgPx-TKbaegQvPEivN90Y",
+		"Alntkt3u6dDgiQxTATr01dy8M72uuaZEf9eTdM-70Gk8",
+		"A1-QxDkso9-MR1A8rZz_Naw6fgaAtayda8hrbkRVVu1E",
+		"AKuYMe09COczwf2nIoD5AE119n7GLFOVFlNLxZcKuswc",
+		"AxFfJTcSuEE11FINfXMqWttkZGnUZ8KaREhrnyAXTsjw",
+		"ALq-w1UKkdrppwZzGTtz4PWYEeWm0-sDHzOv5sq96xJY",
+	}
+	km *keymanager.KeyManager
 )
 
 func main() {
-	//client, err := net.Dial("tcp", ":5621")
-	//if err != nil {
-	//	panic(err)
-	//}
-	//
-	//ticker := time.Tick(3 * time.Second)
-	//
-	//written := 0
-	//for range ticker {
-	//	c, err := client.Write([]byte(`{"v":"KERI10JSON0000e6_" "i": "asdfasdfasdfsaf"`))
-	//	if err != nil {
-	//		panic(err)
-	//	}
-	//	written += c
-	//	fmt.Printf("wrote %d so far\n", written)
-	//}
+	store := mem.NewMemDB()
 
-	handle, err := keyset.NewHandle(signature.ED25519KeyTemplate())
+	kh, err := keyset.NewHandle(aead.AES256GCMKeyTemplate())
 	if err != nil {
 		panic(err)
 	}
 
-	buf := new(bytes.Buffer)
-	w := keyset.NewJSONWriter(buf)
-
-	err = insecurecleartextkeyset.Write(handle, w)
+	a, err := aead.New(kh)
 	if err != nil {
 		panic(err)
 	}
 
-	//fmt.Println(string(buf.Bytes()))
-
-	der, err := derivation.FromPrefix("AgjD4nRlycmM5cPcAkfOATAp8wVldRsnc9f1tiwctXlw")
-	if err != nil {
-		panic(err)
-	}
-	privkey := ed25519.NewKeyFromSeed(der.Raw)
-
-	oldsig, _ := subtle.NewED25519SignerFromPrivateKey(&privkey)
-	oldb, err := oldsig.Sign([]byte("I<3keri"))
+	km, err = keymanager.NewKeyManager(a, store, keymanager.WithSecrets(secrets))
 	if err != nil {
 		panic(err)
 	}
 
-	fmt.Println(base64.StdEncoding.EncodeToString(oldb))
-
-	b, err := NewKeyHandle(der.Raw)
+	kerl, err := keri.New(km)
 	if err != nil {
 		panic(err)
 	}
 
-	keyJson := `{"primaryKeyId":1093351049,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.Ed25519PrivateKey","value":"%s","keyMaterialType":"ASYMMETRIC_PRIVATE"},"status":"ENABLED","keyId":1093351049,"outputPrefixType":"RAW"}]}`
+	fmt.Printf("Direct Mode demo of Bob as %s on TCP port 5620 to port 5621\n\n\n", kerl.Prefix())
 
-	newKeyJs := fmt.Sprintf(keyJson, b)
-
-	r := keyset.NewJSONReader(bytes.NewBuffer([]byte(newKeyJs)))
-	newh, err := insecurecleartextkeyset.Read(r)
+	outb, err := stream.NewStreamOutbound(":5621", 60*time.Second)
 	if err != nil {
 		panic(err)
 	}
 
-	sig, _ := signature.NewSigner(newh)
-	newb, err := sig.Sign([]byte("I<3keri"))
+	msg, err := kerl.Inception()
 	if err != nil {
 		panic(err)
 	}
 
-	fmt.Println(base64.StdEncoding.EncodeToString(newb))
-
-	//pubKH, err := newh.Public()
-	//if err != nil {
-	//	panic(err)
-	//}
-	//buf = new(bytes.Buffer)
-	//pubKeyWriter := keyset.NewJSONWriter(buf)
-	//
-	//err = pubKH.WriteWithNoSecrets(pubKeyWriter)
-	//if err != nil {
-	//	panic(err)
-	//}
-	//
-	//fmt.Println(buf.Len())
-	//
-	//fmt.Println(string(buf.Bytes()))
-	//
-}
-
-func NewKeyHandle(seed []byte) ([]byte, error) {
-	private, err := newKey(seed)
+	err = outb.Write(msg)
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
-	serializedKey, err := proto.Marshal(private.(proto.Message))
+
+	err = kerl.HandleDirect(outb)
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
 
-	s := base64.StdEncoding.EncodeToString(serializedKey)
-	return []byte(s), nil
-}
-
-func newKey(seed []byte) (proto.Message, error) {
-	private := ed25519.NewKeyFromSeed(seed)
-	public := private.Public()
-
-	publicProto := &ed25519pb.Ed25519PublicKey{
-		Version:  0,
-		KeyValue: public.(ed25519.PublicKey),
-	}
-	privateProto := &ed25519pb.Ed25519PrivateKey{
-		Version:   0,
-		PublicKey: publicProto,
-		KeyValue:  private.Seed(),
-	}
-
-	return privateProto, nil
+	ch := make(chan bool)
+	<-ch
 }

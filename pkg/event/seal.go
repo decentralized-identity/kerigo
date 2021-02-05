@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 
 	"github.com/decentralized-identity/kerigo/pkg/derivation"
 )
@@ -160,4 +161,14 @@ func (r *SealArray) MarshalJSON() ([]byte, error) {
 	}
 
 	return json.Marshal(a)
+}
+
+// SequenceInt returns an integer representation of the
+// hex sequence string
+func (r *Seal) SequenceInt() int {
+	eInt, err := strconv.ParseInt(r.Sequence, 16, 64)
+	if err != nil {
+		return -1
+	}
+	return int(eInt)
 }

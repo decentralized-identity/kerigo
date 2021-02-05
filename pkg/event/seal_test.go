@@ -2,6 +2,7 @@ package event
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -67,4 +68,12 @@ func TestSealEstablishment(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, expectedBytes, string(sealBytes))
 
+}
+
+func TestSealSequenceInt(t *testing.T) {
+	s := &Seal{Sequence: "4"}
+	assert.Equal(t, 4, s.SequenceInt())
+
+	s.Sequence = fmt.Sprintf("%x", 93840482)
+	assert.Equal(t, 93840482, s.SequenceInt())
 }

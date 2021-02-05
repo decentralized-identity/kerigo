@@ -1,9 +1,10 @@
 package keri
 
 import (
-	"errors"
 	"fmt"
 	"log"
+
+	"github.com/pkg/errors"
 
 	"github.com/decentralized-identity/kerigo/pkg/db"
 	"github.com/decentralized-identity/kerigo/pkg/event"
@@ -52,8 +53,6 @@ func (r *Registry) Process(msgs <-chan *event.Message) (<-chan *event.Event, err
 }
 
 func (r *Registry) ProcessMessage(msg *event.Message, rcpts chan *event.Event) error {
-
-	fmt.Println(msg.Event.EventType, msg.Event.Prefix)
 
 	switch msg.Event.ILK() {
 	case event.ICP, event.ROT, event.DIP, event.IXN, event.DRT:
@@ -108,10 +107,49 @@ func (r *Registry) processEvent(msg *event.Message) error {
 	return nil
 }
 
-func (r *Registry) processReceipt(msg *event.Message) error {
-	err := r.store.AddVRC("what is the key", msg.Event)
+func (r *Registry) processReceipt(vrc *event.Message) error {
+	seal := vrc.Event.Seals[0]
+	kel, ok := r.kels[vrc.Event.Prefix]
+	if !ok {
+		return errors.New("unexpected error, received a receipt for an unknown prefix")
+	}
+
+	evt := kel.EventAt(vrc.Event.SequenceInt())
+	if evt == nil {
+		//TODO: Haven't seen the target event yet, add to vrc escrow
+		return errors.New("unverified transferable receipt")
+	}
+
+	receiptorKEL, ok := r.kels[seal.Prefix]
+	if !ok {
+		//TODO: Haven't seen the receipter kel yet, add to vrc escrow
+		return errors.New("unverified transferable receipt")
+	}
+
+	estEvt := receiptorKEL.EventAt(seal.SequenceInt())
+	if !ok {
+		//TODO: Haven't seen the establishment event yet, add to vrc escrow
+		return errors.New("unverified transferable receipt")
+	}
+
+	dig, err := estEvt.Event.GetDigest()
 	if err != nil {
 		return err
+	}
+
+	if dig != seal.Digest {
+		return errors.New("invalid vrc seal")
+	}
+
+	//TODO:  Verify receipt sigs
+	//err = receiptorKEL.Verify(vrc)
+	//if err != nil {
+	//	return errors.Wrap(err, "unable to verify vrc signatures")
+	//}
+
+	err = kel.ApplyReceipt(vrc)
+	if err != nil {
+		return errors.Wrap(err, "unable to apply vrc")
 	}
 
 	return nil
