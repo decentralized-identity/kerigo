@@ -15,9 +15,10 @@ import (
 )
 
 type key struct {
-	Pub    ed25519.PublicKey  `json:"pub"`
-	Priv   ed25519.PrivateKey `json:"priv"`
-	signer *subtle.ED25519Signer
+	Pub     ed25519.PublicKey `json:"pub"`
+	Priv    ed25519.PrivateKey
+	PrivDer *derivation.Derivation
+	signer  *subtle.ED25519Signer
 }
 
 type KeyManager struct {
@@ -94,10 +95,16 @@ func (r *KeyManager) nextKeys() (*key, error) {
 		return nil, err
 	}
 
+	nextDer, err := derivation.New(derivation.WithCode(derivation.Ed25519), derivation.WithRaw(pubkey.(ed25519.PublicKey)))
+	if err != nil {
+		return nil, err
+	}
+
 	return &key{
-		Pub:    pubkey.(ed25519.PublicKey),
-		Priv:   privkey,
-		signer: signer,
+		Pub:     pubkey.(ed25519.PublicKey),
+		Priv:    privkey,
+		PrivDer: nextDer,
+		signer:  signer,
 	}, nil
 
 }
@@ -108,6 +115,10 @@ func (r *KeyManager) Signer() derivation.Signer {
 
 func (r *KeyManager) PublicKey() ed25519.PublicKey {
 	return r.current.Pub
+}
+
+func (r *KeyManager) Next() *derivation.Derivation {
+	return r.next.PrivDer
 }
 
 func (r *KeyManager) Rotate() error {

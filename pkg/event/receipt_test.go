@@ -21,8 +21,8 @@ func TestTransferable(t *testing.T) {
 	remoteICP := incept(t, remoteSecret, remoteNext)
 	estEvent := incept(t, localSecret, localNext)
 
-	icpBytes := `{"v":"KERI10JSON0000e6_","i":"ENqFtH6_cfDg8riLZ-GDvDaCKVn6clOJa7ZXXVXSWpRY","s":"0","t":"icp","kt":"1","k":["DSuhyBcPZEZLK-fcw5tzHn2N46wRCG_ZOoeKtWTOunRA"],"n":"EPYuj8mq_PYYsoBKkzX1kxSPGYBWaIya3slgCOyOtlqU","wt":"0","w":[],"c":[]}`
-	expectedVRCBytes := `{"v":"KERI10JSON000105_","i":"ENqFtH6_cfDg8riLZ-GDvDaCKVn6clOJa7ZXXVXSWpRY","s":"0","t":"vrc","d":"E9ZTKOhr-lqB7jbBMBpUIdMpfWvEswoMoc5UrwCRcTSc","a":{"i":"EmGTyV9unQ59uIQIYv6Vsc7KweyTbplfumEV-IB33bEg","s":"0","d":"E-_qFJZK8ER6rJA7W4WR2xxSwKT1RLi8yCCyZ0XHTnLU"}}`
+	icpBytes := `{"v":"KERI10JSON0000e6_","i":"Ep9IFLmnLTwz_EfZCXOuVHcYFmoHNKgqz7nQ1ItKX9pc","s":"0","t":"icp","kt":"1","k":["DSuhyBcPZEZLK-fcw5tzHn2N46wRCG_ZOoeKtWTOunRA"],"n":"EPYuj8mq_PYYsoBKkzX1kxSPGYBWaIya3slgCOyOtlqU","wt":"0","w":[],"c":[]}`
+	expectedVRCBytes := `{"v":"KERI10JSON000105_","i":"Ep9IFLmnLTwz_EfZCXOuVHcYFmoHNKgqz7nQ1ItKX9pc","s":"0","t":"vrc","d":"EBSQD8MrJi-qTF--fg1hMT7a-sVacyFjeaPn3FduKNsc","a":{"i":"E482bsaPDuLO25ilSJkErz-Xqmw4knyAZd1Ah01do9k0","s":"0","d":"Ej2wcLnGA6DJHhF3f08nIIhoZncG2O1pVKgFvWLPDFjg"}}`
 
 	d, _ := json.Marshal(remoteICP)
 	assert.JSONEq(t, icpBytes, string(d))
@@ -39,8 +39,7 @@ func TestTransferable(t *testing.T) {
 	vrcBytes, err := vrc.Serialize()
 	assert.NoError(t, err)
 
-	//TODO:  get the seal digest of the last establishment event to match
-	assert.Equal(t, len(expectedVRCBytes), len(vrcBytes))
+	assert.Equal(t, expectedVRCBytes, string(vrcBytes))
 }
 
 func incept(t *testing.T, secret, next string) *Event {

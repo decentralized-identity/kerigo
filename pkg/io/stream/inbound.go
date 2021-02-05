@@ -1,20 +1,15 @@
 package stream
 
 import (
-	"bufio"
-	"fmt"
-	"io"
 	"log"
 	"net"
 	"regexp"
-	"strconv"
-	"strings"
 	"sync"
 
 	"github.com/pkg/errors"
 
-	"github.com/decentralized-identity/kerigo/pkg/derivation"
 	"github.com/decentralized-identity/kerigo/pkg/event"
+	"github.com/decentralized-identity/kerigo/pkg/io"
 )
 
 const (
@@ -27,6 +22,11 @@ const (
 	MessageBufferSize = 5
 )
 
+type conn struct {
+	ch   chan *event.Message
+	conn net.Conn
+}
+
 var (
 	Rever = regexp.MustCompile(Verex)
 )
@@ -35,19 +35,19 @@ type Inbound struct {
 	addr string
 
 	connLock sync.Mutex
-	conns    []net.Conn
+	conns    []*conn
 
-	ch chan *event.Message
+	ch chan io.Conn
 }
 
 func NewStreamInbound(addr string) (*Inbound, error) {
 	return &Inbound{
 		addr: addr,
-		ch:   make(chan *event.Message, MessageBufferSize),
+		ch:   make(chan io.Conn, 1),
 	}, nil
 }
 
-func (r *Inbound) Start() (<-chan *event.Message, error) {
+func (r *Inbound) Start() (<-chan io.Conn, error) {
 	ln, err := net.Listen("tcp", r.addr)
 	if err != nil {
 		return nil, errors.Wrapf(err, "unable to listen on %s", r.addr)
@@ -55,17 +55,23 @@ func (r *Inbound) Start() (<-chan *event.Message, error) {
 
 	go func() {
 		for {
-			conn, err := ln.Accept()
+			c, err := ln.Accept()
 			if err != nil {
 				log.Printf("unexpected error accepting connection: %v", err)
 				continue
 			}
 
-			r.addConnection(conn)
+			ioc := &conn{
+				conn: c,
+				ch:   make(chan *event.Message, MessageBufferSize),
+			}
+
+			r.addConnection(ioc)
+			r.ch <- ioc
 			go func() {
-				err := r.handleConnection(conn)
-				r.remoteConnection(conn)
-				log.Printf("connection closed with err: %v\n", err)
+				err := handleConnection(ioc.conn, ioc.ch)
+				r.removeConnection(ioc)
+				log.Printf("inbound connection closed with err: %v\n", err)
 			}()
 		}
 	}()
@@ -78,71 +84,21 @@ func (r *Inbound) Stop() {
 	defer r.connLock.Unlock()
 
 	for _, conn := range r.conns {
-		_ = conn.Close()
+		_ = conn.conn.Close()
+		close(conn.ch)
 	}
 
 	close(r.ch)
 }
 
-func (r *Inbound) handleConnection(conn io.Reader) error {
-	c := bufio.NewReader(conn)
-
-	for {
-		// read a min sized buffer which contains the message length
-		h, err := c.Peek(MinSniffSize)
-		if err != nil {
-			return fmt.Errorf("short peek: (%v)", err)
-		}
-
-		submatches := Rever.FindStringSubmatch(string(h))
-		if len(submatches) != 5 {
-			return errors.New("invalid version string")
-		}
-
-		ser := strings.TrimSpace(submatches[3])
-		hex := submatches[4]
-
-		size, err := strconv.ParseInt(hex, 16, 64)
-		if err != nil {
-			return errors.Wrap(err, "invalid message size hex")
-		}
-
-		f, err := event.Format(ser)
-		if err != nil {
-			return err
-		}
-
-		buff := make([]byte, size)
-		_, err = io.ReadFull(c, buff)
-		if err != nil {
-			return err
-		}
-
-		msg := &event.Message{}
-		msg.Event, err = event.Deserialize(buff, f)
-		if err != nil {
-			return fmt.Errorf("unable to unmarshal event: (%v)", err)
-		}
-
-		sigs, err := derivation.ParseAttachedSignatures(c)
-		if err != nil {
-			return fmt.Errorf("error parsing sigs: %v", err)
-		}
-
-		msg.Signatures = sigs
-
-		r.ch <- msg
-	}
-}
-
-func (r *Inbound) addConnection(conn net.Conn) {
+func (r *Inbound) addConnection(conn *conn) {
 	r.connLock.Lock()
 	defer r.connLock.Unlock()
 
 	r.conns = append(r.conns, conn)
 }
 
-func (r *Inbound) remoteConnection(conn net.Conn) {
+func (r *Inbound) removeConnection(conn *conn) {
 	r.connLock.Lock()
 	defer r.connLock.Unlock()
 
@@ -157,4 +113,34 @@ func (r *Inbound) remoteConnection(conn net.Conn) {
 	if idx != -1 {
 		r.conns = append(r.conns[:idx], r.conns[idx+1:]...)
 	}
+}
+
+// Write the message to all currently active connections
+func (r *Inbound) Write(msg *event.Message) error {
+	for _, c := range r.conns {
+		err := c.Write(msg)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (r *conn) Msgs() chan *event.Message {
+	return r.ch
+}
+
+func (r *conn) Write(msg *event.Message) error {
+	data, err := msg.Serialize()
+	if err != nil {
+		return errors.Wrap(err, "unable to serialize message for stream outbound")
+	}
+
+	_, err = r.conn.Write(data)
+	if err != nil {
+		return errors.Wrap(err, "unable to right message to stream outbound")
+	}
+
+	return nil
 }

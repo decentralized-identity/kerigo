@@ -510,3 +510,34 @@ func newKeys(num int) ([]*basicKeys, error) {
 
 	return keys, nil
 }
+
+func TestReceipts(t *testing.T) {
+	k, err := newKeys(2)
+	assert.NoError(t, err)
+
+	icp, err := event.NewInceptionEvent(event.WithDefaultVersion(event.JSON), event.WithKeys(k[0].pre))
+	assert.NoError(t, err)
+	est, err := event.NewInceptionEvent(event.WithDefaultVersion(event.JSON), event.WithKeys(k[1].pre))
+	assert.NoError(t, err)
+
+	vrc, err := event.TransferableReceipt(icp, est, derivation.Blake3256)
+	assert.NoError(t, err)
+
+	msg := &event.Message{
+		Event: icp,
+	}
+
+	kel := New()
+	err = kel.Apply(msg)
+
+	assert.NoError(t, err)
+
+	msg = &event.Message{
+		Event: vrc,
+	}
+	err = kel.ApplyReceipt(msg)
+	assert.NoError(t, err)
+
+	rcpts := kel.ReceiptsForEvent(icp)
+	assert.Len(t, rcpts, 1)
+}

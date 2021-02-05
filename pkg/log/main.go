@@ -15,6 +15,7 @@ import (
 // Log contains the Key Event Log for a given identifier
 type Log struct {
 	Events      []*event.Message // ordered Key events
+	Receipts    Register         // receipts for Events
 	Pending     Escrow           // pending events
 	Duplicitous Escrow           // escrow of duplicitous events
 }
@@ -40,7 +41,12 @@ func (a ByDate) Less(i, j int) bool {
 }
 
 func New() *Log {
-	return &Log{Events: []*event.Message{}, Pending: map[string]*event.Message{}, Duplicitous: map[string]*event.Message{}}
+	return &Log{
+		Events:      []*event.Message{},
+		Pending:     map[string]*event.Message{},
+		Duplicitous: map[string]*event.Message{},
+		Receipts:    Register{},
+	}
 }
 
 // Inception returns the inception event for this log
@@ -175,6 +181,22 @@ func (l *Log) Apply(e *event.Message) error {
 	}
 
 	return nil
+}
+
+func (l *Log) ApplyReceipt(vrc *event.Message) error {
+	err := l.Receipts.Add(vrc)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (l *Log) ReceiptsForEvent(evt *event.Event) []*event.Message {
+	dig, _ := evt.GetDigest()
+	fmt.Println(dig)
+	rcpts := l.Receipts[dig]
+	return rcpts
 }
 
 // AddSignatures takes an event message (event + attached signatures) and attempts
