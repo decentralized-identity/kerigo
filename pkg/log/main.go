@@ -94,6 +94,109 @@ func (l *Log) CurrentEstablishment() *event.Event {
 	return nil
 }
 
+// EstablishmentEvents returns a slice of the establishment event messages
+// in the log, order by serial number
+func (l *Log) EstablishmentEvents() []*event.Event {
+	sort.Sort(BySequence(l.Events))
+
+	est := []*event.Event{}
+
+	for i, e := range l.Events {
+		if e.Event.ILK().Establishment() {
+			est = append(est, l.Events[i].Event)
+		}
+	}
+
+	return est
+}
+
+// KeyState returns a key state event (kst) that contains the
+// current state of the identifier. This is essentially
+// compressing all the establishment events to give a current
+// view of keys, next, witnesses, and thresholds, along with
+// a digest seal of the last received events
+func (l *Log) KeyState() (*event.Event, error) {
+	var kst *event.Event
+
+	evnts := l.EstablishmentEvents()
+
+	if len(evnts) == 0 {
+		// nothing in the log!
+		return nil, nil
+	}
+
+	for i, e := range evnts {
+		// start with the inception event
+		if i == 0 {
+			kst = evnts[i]
+			continue
+		}
+
+		// Assumption: these will always be provided in the messages
+		kst.SigThreshold = e.SigThreshold
+		kst.Keys = e.Keys
+		kst.Next = e.Next
+		kst.WitnessThreshold = e.WitnessThreshold
+
+		// if you are adding or cutting witnesses, we ignore the witness list
+		if len(e.AddWitness) != 0 || len(e.RemoveWitness) != 0 {
+			for _, w := range e.RemoveWitness {
+				for ci, cw := range kst.Witnesses {
+					if w == cw {
+						kst.Witnesses = append(kst.Witnesses[:ci], kst.Witnesses[ci+1:]...)
+					}
+				}
+			}
+
+			// de-duping...not sure if this is really necessary?
+			for _, w := range e.AddWitness {
+				found := false
+				for _, cw := range kst.Witnesses {
+					if cw == w {
+						found = true
+						break
+					}
+				}
+				if !found {
+					kst.Witnesses = append(kst.Witnesses, w)
+				}
+			}
+
+		} else if len(e.Witnesses) != 0 {
+			// otherwise if we have an included list of witnesses
+			kst.Witnesses = e.Witnesses
+		}
+	}
+
+	// key state events don't need the sequence number
+	kst.Sequence = ""
+	kst.EventType = event.KST.String()
+
+	// digest the last event
+	current := l.Current()
+	seal, err := event.SealEstablishment(current)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create seal for last event (%s)", err.Error())
+	}
+
+	// we don't need the prefix but do need the event type
+	seal.Prefix = ""
+	seal.EventType = current.EventType
+	kst.LastEvent = seal
+
+	// digest the last establishment event
+	seal, err = event.SealEstablishment(evnts[len(evnts)-1])
+	if err != nil {
+		return nil, fmt.Errorf("unable to create seal for last establishment event (%s)", err.Error())
+	}
+
+	// we dont' need the prefix for this
+	seal.Prefix = ""
+	kst.LastEstablishment = seal
+
+	return kst, nil
+}
+
 // Apply the provided event to the log
 // Apply will confirm the sequence number and digest for the new log
 // entry are correct before applying. If the event message is for an

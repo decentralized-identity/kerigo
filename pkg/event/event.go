@@ -23,6 +23,7 @@ const (
 	RCT
 	VRC
 	DRT
+	KST
 )
 
 var (
@@ -34,6 +35,7 @@ var (
 		"rct": RCT,
 		"vrc": VRC,
 		"drt": DRT,
+		"kst": KST,
 	}
 
 	ilkString = map[ILK]string{
@@ -44,6 +46,7 @@ var (
 		RCT: "rct",
 		VRC: "vrc",
 		DRT: "drt",
+		KST: "kst",
 	}
 
 	serFields = map[ILK][]string{
@@ -90,22 +93,23 @@ var (
 )
 
 type Event struct {
-	Version                       string         `json:"v"`
-	Prefix                        string         `json:"i,omitempty"`
-	Sequence                      string         `json:"s"`
-	EventType                     string         `json:"t"`
-	Digest                        string         `json:"p,omitempty"`
-	SigThreshold                  *SigThreshold  `json:"kt,omitempty"`
-	Keys                          []string       `json:"k,omitempty"`
-	Next                          string         `json:"n,omitempty"`
-	AccountableDuplicityThreshold string         `json:"wt,omitempty"`
-	Witnesses                     []string       `json:"w,omitempty"`
-	Add                           []string       `json:"wa,omitempty"`
-	Cut                           []string       `json:"wr,omitempty"`
-	Config                        []prefix.Trait `json:"c,omitempty"`
-	Permissions                   []interface{}  `json:"perm,omitempty"`
-	Seals                         SealArray      `json:"a,omitempty"`
-	DelegatorSeal                 *Seal          `json:"da,omitempty"`
+	Version           string         `json:"v"`
+	Prefix            string         `json:"i,omitempty"`
+	Sequence          string         `json:"s,omitempty"`
+	EventType         string         `json:"t"`
+	Digest            string         `json:"p,omitempty"`
+	SigThreshold      *SigThreshold  `json:"kt,omitempty"`
+	Keys              []string       `json:"k,omitempty"`
+	Next              string         `json:"n,omitempty"`
+	WitnessThreshold  string         `json:"wt,omitempty"`
+	Witnesses         []string       `json:"w,omitempty"`
+	AddWitness        []string       `json:"wa,omitempty"`
+	RemoveWitness     []string       `json:"wr,omitempty"`
+	Config            []prefix.Trait `json:"c,omitempty"`
+	Seals             SealArray      `json:"a,omitempty"`
+	DelegatorSeal     *Seal          `json:"da,omitempty"`
+	LastEvent         *Seal          `json:"e,omitempty"`
+	LastEstablishment *Seal          `json:"ee,omitempty"`
 }
 
 // ILK returns the ILK iota value for the event
@@ -124,11 +128,11 @@ func (e *Event) MarshalJSON() ([]byte, error) {
 
 	case ROT.String(), DRT.String():
 		// rotation events need cuts, adds, and data
-		if e.Cut == nil {
-			e.Cut = []string{}
+		if e.RemoveWitness == nil {
+			e.RemoveWitness = []string{}
 		}
-		if e.Add == nil {
-			e.Add = []string{}
+		if e.AddWitness == nil {
+			e.AddWitness = []string{}
 		}
 		if e.Seals == nil {
 			e.Seals = SealArray{}
@@ -136,14 +140,14 @@ func (e *Event) MarshalJSON() ([]byte, error) {
 
 		return json.Marshal(&struct {
 			*EventAlias
-			Cut   []string  `json:"wr"`
-			Add   []string  `json:"wa"`
-			Seals SealArray `json:"a"`
+			RemoveWitness []string  `json:"wr"`
+			AddWitness    []string  `json:"wa"`
+			Seals         SealArray `json:"a"`
 		}{
-			EventAlias: (*EventAlias)(e),
-			Cut:        e.Cut,
-			Add:        e.Add,
-			Seals:      e.Seals,
+			EventAlias:    (*EventAlias)(e),
+			RemoveWitness: e.RemoveWitness,
+			AddWitness:    e.AddWitness,
+			Seals:         e.Seals,
 		})
 
 	case IXN.String():
