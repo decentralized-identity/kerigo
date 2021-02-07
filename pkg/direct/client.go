@@ -1,4 +1,4 @@
-package stream
+package direct
 
 import (
 	"context"
@@ -10,20 +10,24 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/decentralized-identity/kerigo/pkg/event"
-	kio "github.com/decentralized-identity/kerigo/pkg/io"
+	"github.com/decentralized-identity/kerigo/pkg/keri"
 )
 
-type Outbound struct {
-	ioc     *conn
-	addr    string
-	timeout time.Duration
+type Client struct {
+	addr string
+	ioc  *conn
+	id   *keri.Keri
 }
 
-func NewStreamOutbound(addr string, timeout time.Duration) (*Outbound, error) {
+func Dial(id *keri.Keri, addr string) (*Client, error) {
+	return DialTimeout(id, addr, 0)
+}
 
-	o := &Outbound{
-		addr:    addr,
-		timeout: timeout,
+func DialTimeout(id *keri.Keri, addr string, timeout time.Duration) (*Client, error) {
+
+	o := &Client{
+		addr: addr,
+		id:   id,
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -37,7 +41,6 @@ func NewStreamOutbound(addr string, timeout time.Duration) (*Outbound, error) {
 		}
 
 		o.ioc = &conn{
-			ch:   make(chan *event.Message, MessageBufferSize),
 			conn: c,
 		}
 		return nil
@@ -47,21 +50,16 @@ func NewStreamOutbound(addr string, timeout time.Duration) (*Outbound, error) {
 		return nil, errors.Wrap(err, "unable to connect after timeout")
 	}
 
-	return o, nil
-}
-
-func (r *Outbound) Start() (<-chan kio.Conn, error) {
-	ch := make(chan kio.Conn, 1)
-	ch <- r.ioc
 	go func() {
-		err := handleConnection(r.ioc.conn, r.ioc.ch)
-		log.Printf("outbound connection closed with err: %v\n", err)
+		err := handleConnection(o.ioc, o.id)
+		log.Printf("client connection closed with (%v)\n", err)
 	}()
 
-	return ch, nil
+	return o, nil
+
 }
 
-func (r *Outbound) Write(msg *event.Message) error {
+func (r *Client) Write(msg *event.Message) error {
 	err := r.ioc.Write(msg)
 	if err != nil {
 		return errors.Wrap(err, "unable to right message to stream outbound")
@@ -70,7 +68,6 @@ func (r *Outbound) Write(msg *event.Message) error {
 	return nil
 }
 
-func (r *Outbound) Stop() {
-	_ = r.ioc.conn.Close()
-	close(r.ioc.ch)
+func (r *Client) Close() error {
+	return r.ioc.conn.Close()
 }

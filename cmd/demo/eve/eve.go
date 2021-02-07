@@ -2,12 +2,14 @@ package main
 
 import (
 	"fmt"
+	"log"
+	"net"
 
 	"github.com/google/tink/go/aead"
 	"github.com/google/tink/go/keyset"
 
 	"github.com/decentralized-identity/kerigo/pkg/db/mem"
-	"github.com/decentralized-identity/kerigo/pkg/io/stream"
+	"github.com/decentralized-identity/kerigo/pkg/direct"
 	"github.com/decentralized-identity/kerigo/pkg/keri"
 	"github.com/decentralized-identity/kerigo/pkg/keymanager"
 )
@@ -28,11 +30,6 @@ var (
 
 func main() {
 
-	inb, err := stream.NewStreamInbound(":5621")
-	if err != nil {
-		panic(err)
-	}
-
 	store := mem.NewMemDB()
 
 	kh, err := keyset.NewHandle(aead.AES256GCMKeyTemplate())
@@ -45,7 +42,7 @@ func main() {
 		panic(err)
 	}
 
-	km, err = keymanager.NewKeyManager(a, store, keymanager.WithSecrets(secrets))
+	km, err = keymanager.NewKeyManager(keymanager.WithAEAD(a), keymanager.WithStore(store), keymanager.WithSecrets(secrets))
 	if err != nil {
 		panic(err)
 	}
@@ -57,12 +54,13 @@ func main() {
 
 	fmt.Printf("Direct Mode demo of Eve as %s on TCP port 5621 to port 5620\n\n\n", kerl.Prefix())
 
-	err = kerl.HandleDirect(inb)
-	if err != nil {
-		panic(err)
+	srv := &direct.Server{
+		Addr: ":5621",
+		BaseIdentity: func(l net.Listener) *keri.Keri {
+			return kerl
+		},
 	}
 
-	ch := make(chan bool)
-	<-ch
-
+	err = srv.ListenAndServer()
+	log.Printf("direct mode server exited with %v\n", err)
 }

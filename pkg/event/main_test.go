@@ -9,6 +9,7 @@ import (
 
 	"github.com/decentralized-identity/kerigo/pkg/derivation"
 	"github.com/decentralized-identity/kerigo/pkg/prefix"
+	"github.com/decentralized-identity/kerigo/pkg/test"
 )
 
 func TestNewInceptionEvent(t *testing.T) {
@@ -61,4 +62,40 @@ func TestNext(t *testing.T) {
 	assert.NoError(err)
 	assert.Equal("EPYuj8mq_PYYsoBKkzX1kxSPGYBWaIya3slgCOyOtlqU", event.Next)
 
+}
+
+func TestRotationEvent(t *testing.T) {
+	t.Run("happy", func(t *testing.T) {
+		expectedRotBytes := `{"v":"KERI10JSON0000ba_","i":"Eh0fefvTQ55Jwps4dVnIekf7mZgWoU8bCUsDsKeGiEgU","s":"0","t":"rot","kt":"1","n":"EOF414QEuea9A-Svo-tzipeVfk0-DvtAsaLULWCnHXw4","wt":"0","wr":[],"wa":[],"a":[]}`
+		secrets := []string{"ADW3o9m3udwEf0aoOdZLLJdf1aylokP0lwwI_M2J9h0s", "AagumsL8FeGES7tYcnr_5oN6qcwJzZfLKxoniKUpG4qc", "Ap5waegfnuP6ezC18w7jQiPyQwYYsp9Yv9rYMlKAYL8k"}
+		kms := test.GetKMS(t, secrets)
+
+		icp, err := Incept(kms.PublicKey(), kms.Next())
+		assert.NoError(t, err)
+
+		err = kms.Rotate()
+		assert.NoError(t, err)
+
+		nextPre := prefix.New(kms.Next())
+
+		evt, err := NewRotationEvent(WithPrefix(icp.Prefix), WithNext(1, derivation.Blake3256, nextPre))
+		assert.NoError(t, err)
+
+		b, err := evt.Serialize()
+		assert.NoError(t, err)
+
+		assert.Equal(t, expectedRotBytes, string(b))
+	})
+	t.Run("invalid rotation prefix", func(t *testing.T) {
+		evt, err := NewRotationEvent()
+		assert.Error(t, err)
+		assert.Nil(t, evt)
+		assert.Equal(t, "prefix required for rot", err.Error())
+	})
+	t.Run("invalid rotation next commitment", func(t *testing.T) {
+		evt, err := NewRotationEvent(WithPrefix("Eh0fefvTQ55Jwps4dVnIekf7mZgWoU8bCUsDsKeGiEgU"))
+		assert.Error(t, err)
+		assert.Nil(t, evt)
+		assert.Equal(t, "next commitment required for rot", err.Error())
+	})
 }

@@ -31,8 +31,8 @@ func keyMgr(t *testing.T, opts ...Option) *KeyManager {
 	a, err := aead.New(kh)
 	assert.NoError(t, err)
 
-	db := mem.NewMemDB()
-	km, err := NewKeyManager(a, db, opts...)
+	opts = append(opts, WithAEAD(a))
+	km, err := NewKeyManager(opts...)
 	assert.NoError(t, err)
 	return km
 }
@@ -176,7 +176,7 @@ func TestDB(t *testing.T) {
 
 		db := mem.NewMemDB()
 
-		km1, err := NewKeyManager(a, db)
+		km1, err := NewKeyManager(WithAEAD(a), WithStore(db))
 		assert.NoError(t, err)
 
 		assert.NotNil(t, km1)
@@ -194,7 +194,7 @@ func TestDB(t *testing.T) {
 		enc, err := sig([]byte("test data"))
 		assert.NoError(t, err)
 
-		km2, err := NewKeyManager(a, db)
+		km2, err := NewKeyManager(WithAEAD(a), WithStore(db))
 		assert.NoError(t, err)
 
 		sig2 := km2.Signer()
