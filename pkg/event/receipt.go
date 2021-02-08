@@ -19,7 +19,7 @@ func TransferableReceipt(event *Event, estEvent *Event, code derivation.Code) (*
 		WithSequence(event.SequenceInt()),
 		WithPrefix(event.Prefix),
 		WithDefaultVersion(JSON),
-		WithSeal(s),
+		WithSeals([]*Seal{s}),
 	)
 
 	if err != nil {
@@ -35,7 +35,7 @@ func TransferableReceipt(event *Event, estEvent *Event, code derivation.Code) (*
 	if err != nil {
 		return nil, err
 	}
-	receipt.Digest = eventDigest
+	receipt.EventDigest = eventDigest
 
 	eventBytes, err := Serialize(receipt, JSON)
 	if err != nil {
@@ -69,7 +69,7 @@ func NonTransferableReceipt(event *Event, code derivation.Code) (*Event, error) 
 	if err != nil {
 		return nil, err
 	}
-	receipt.Digest = eventDigest
+	receipt.EventDigest = eventDigest
 
 	return receipt, nil
 }

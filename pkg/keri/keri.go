@@ -1,8 +1,10 @@
 package keri
 
 import (
+	"crypto/ed25519"
 	"encoding/json"
 	"log"
+	"time"
 
 	"github.com/pkg/errors"
 
@@ -11,19 +13,22 @@ import (
 	"github.com/decentralized-identity/kerigo/pkg/keymanager"
 	klog "github.com/decentralized-identity/kerigo/pkg/log"
 	"github.com/decentralized-identity/kerigo/pkg/prefix"
+	"github.com/decentralized-identity/kerigo/pkg/version"
 )
 
 type Option func(*Keri) error
 
 type Keri struct {
-	pre string
-	kms *keymanager.KeyManager
-	reg *Registry
+	pre   string
+	kms   *keymanager.KeyManager
+	reg   *Registry
+	rcpts *Receipts
 }
 
 func New(kms *keymanager.KeyManager, opts ...Option) (*Keri, error) {
 	k := &Keri{
-		kms: kms,
+		kms:   kms,
+		rcpts: &Receipts{},
 	}
 
 	reg, err := NewRegistry()
@@ -40,7 +45,7 @@ func New(kms *keymanager.KeyManager, opts ...Option) (*Keri, error) {
 		}
 	}
 
-	icp, err := event.Incept(kms.PublicKey(), kms.Next())
+	icp, err := createInception(kms.PublicKey(), kms.Next())
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to create my own inception event")
 	}
@@ -178,8 +183,44 @@ func (r *Keri) Rotate() (*event.Message, error) {
 	return msg, nil
 }
 
-func (r *Keri) Interaction(_ []byte) (*event.Event, error) {
-	return nil, errors.New("not implemented")
+func (r *Keri) Interaction(payload event.SealArray) (*event.Message, error) {
+	kel, err := r.reg.KEL(r.pre)
+	if err != nil {
+		return nil, errors.Wrap(err, "unexpected error getting my KEL")
+	}
+
+	cur := kel.Current()
+	dig, err := cur.GetDigest()
+	sn := cur.SequenceInt() + 1
+
+	ixn, err := event.NewInteractionEvent(
+		event.WithPrefix(cur.Prefix),
+		event.WithDigest(dig),
+		event.WithDefaultVersion(event.JSON),
+		event.WithSequence(sn),
+		event.WithSeals(payload),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	sig, err := r.sign(ixn)
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to sign my ixn event")
+	}
+
+	msg := &event.Message{
+		Event:      ixn,
+		Signatures: []derivation.Derivation{*sig},
+	}
+
+	err = r.reg.ProcessEvent(msg)
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to process my own ixn event")
+	}
+
+	return msg, nil
+
 }
 
 func (r *Keri) FindConnection(prefix string) (*klog.Log, error) {
@@ -189,6 +230,39 @@ func (r *Keri) FindConnection(prefix string) (*klog.Log, error) {
 	}
 
 	return l, nil
+}
+
+func (r *Keri) WaitForReceipt(evt *event.Event, timeout time.Duration) (chan *event.Event, chan error) {
+	rcptCh := make(chan *event.Event, 1)
+	_ = r.rcpts.RegisterRcptChan(rcptCh)
+
+	out := make(chan *event.Event, 1)
+	errOut := make(chan error, 1)
+
+	go func() {
+		defer func() {
+			_ = r.rcpts.UnregisterRcptChan(rcptCh)
+		}()
+
+		for {
+			select {
+			case rcpt := <-rcptCh:
+				dig, err := evt.GetDigest()
+				if err != nil {
+					continue
+				}
+
+				if rcpt.EventDigest == dig {
+					out <- rcpt
+					return
+				}
+			case <-time.After(timeout):
+				errOut <- errors.New("receipt timeout")
+			}
+		}
+	}()
+
+	return out, errOut
 }
 
 func (r *Keri) generateReceipt(evt *event.Event) (*event.Message, error) {
@@ -291,5 +365,58 @@ func (r *Keri) ProcessReceipt(vrc *event.Message) error {
 		return errors.Wrap(err, "unable to apply vrc")
 	}
 
+	for _, ch := range r.rcpts.RcptChans() {
+		ch <- vrc.Event
+	}
+
 	return nil
+}
+
+func createInception(signing ed25519.PublicKey, next *derivation.Derivation) (*event.Event, error) {
+	keyDer, err := derivation.New(derivation.WithCode(derivation.Ed25519), derivation.WithRaw(signing))
+	if err != nil {
+		return nil, err
+	}
+
+	keyPre := prefix.New(keyDer)
+
+	nextKeyPre := prefix.New(next)
+
+	icp, err := event.NewInceptionEvent(event.WithKeys(keyPre), event.WithDefaultVersion(event.JSON), event.WithNext(1, derivation.Blake3256, nextKeyPre))
+	if err != nil {
+		return nil, err
+	}
+
+	// Serialize with defaults to get correct length for version string
+	icp.Prefix = derivation.Blake3256.Default()
+	icp.Version = event.DefaultVersionString(event.JSON)
+	eventBytes, err := event.Serialize(icp, event.JSON)
+	if err != nil {
+		return nil, err
+	}
+
+	icp.Version = event.VersionString(event.JSON, version.Code(), len(eventBytes))
+
+	ser, err := event.Serialize(icp, event.JSON)
+	if err != nil {
+		return nil, err
+	}
+
+	saDerivation, err := derivation.New(derivation.WithCode(derivation.Blake3256))
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = saDerivation.Derive(ser)
+	if err != nil {
+		return nil, err
+	}
+
+	selfAdd := prefix.New(saDerivation)
+	selfAddAID := selfAdd.String()
+
+	// Set as the prefix for the inception event
+	icp.Prefix = selfAddAID
+
+	return icp, nil
 }

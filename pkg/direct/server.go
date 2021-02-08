@@ -1,6 +1,7 @@
 package direct
 
 import (
+	"bufio"
 	"log"
 	"net"
 	"sync"
@@ -75,7 +76,9 @@ func (r *Server) Serve(l net.Listener) error {
 			return errors.Wrap(err, "unexpected error accepting connection")
 		}
 
-		firstMsg, err := readMessage(c)
+		br := bufio.NewReader(c)
+
+		firstMsg, err := readMessage(br)
 		if err != nil {
 			log.Println("error reading initial message on connection", err)
 			c.Close()
@@ -83,7 +86,8 @@ func (r *Server) Serve(l net.Listener) error {
 		}
 
 		ioc := &conn{
-			conn: c,
+			reader: br,
+			conn:   c,
 		}
 
 		r.addConnection(ioc)

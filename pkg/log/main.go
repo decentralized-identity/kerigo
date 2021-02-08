@@ -2,8 +2,10 @@ package log
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"sort"
 	"strconv"
 	"time"
@@ -229,7 +231,7 @@ func (l *Log) Apply(e *event.Message) error {
 		return nil
 	}
 
-	inDerivation, err := derivation.FromPrefix(e.Event.Digest)
+	inDerivation, err := derivation.FromPrefix(e.Event.PriorEventDigest)
 	if err != nil {
 		return fmt.Errorf("unable to determin digest derivation (%s)", err)
 	}
@@ -255,7 +257,7 @@ func (l *Log) Apply(e *event.Message) error {
 	}
 	sigs := mergeSignatures(escrowed.Signatures, e.Signatures)
 
-	if !current.SigThreshold.Satisfied(sigs) {
+	if current.SigThreshold != nil && !current.SigThreshold.Satisfied(sigs) {
 		err = l.Pending.Add(e)
 		if err != nil {
 			return fmt.Errorf("unable to escrow event (%s)", err)
@@ -282,6 +284,9 @@ func (l *Log) Apply(e *event.Message) error {
 		// return nil
 		return l.Apply(next[0])
 	}
+
+	b, _ := json.Marshal(e.Event)
+	log.Print("Added valid event to KEL event = ", string(b), "\n\n")
 
 	return nil
 }

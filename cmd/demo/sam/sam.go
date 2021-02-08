@@ -51,7 +51,7 @@ func main() {
 		panic(err)
 	}
 
-	fmt.Printf("Direct Mode demo of Bob as %s on TCP port 5620 to port 5621\n\n\n", kerl.Prefix())
+	fmt.Printf("Direct Mode demo of Sam as %s on TCP port 5620 to port 5621\n\n\n", kerl.Prefix())
 
 	cli, err := direct.DialTimeout(kerl, ":5621", 60*time.Second)
 	if err != nil {
@@ -68,22 +68,22 @@ func main() {
 			panic(err)
 		}
 
-		rot, err := kerl.Rotate()
+		ixn, err := kerl.Interaction([]*event.Seal{})
 		if err != nil {
 			panic(err)
 		}
 
-		err = cli.WriteNotify(rot, func(rcpt *event.Event, err error) {
+		err = cli.WriteNotify(ixn, func(rcpt *event.Event, err error) {
 			if err != nil {
 				panic(err)
 			}
 
-			ixn, err := kerl.Interaction([]*event.Seal{})
+			rot, err := kerl.Rotate()
 			if err != nil {
 				panic(err)
 			}
 
-			err = cli.Write(ixn)
+			err = cli.Write(rot)
 			if err != nil {
 				panic(err)
 			}

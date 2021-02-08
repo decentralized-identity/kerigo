@@ -49,7 +49,7 @@ func TestNonTransferable(t *testing.T) {
 	remoteICP := incept(t, remoteSecret, remoteNext)
 
 	icpBytes := `{"v":"KERI10JSON0000e6_","i":"Ep9IFLmnLTwz_EfZCXOuVHcYFmoHNKgqz7nQ1ItKX9pc","s":"0","t":"icp","kt":"1","k":["DSuhyBcPZEZLK-fcw5tzHn2N46wRCG_ZOoeKtWTOunRA"],"n":"EPYuj8mq_PYYsoBKkzX1kxSPGYBWaIya3slgCOyOtlqU","wt":"0","w":[],"c":[]}`
-	expectedVRCBytes := `{"v":"KERI10JSON0000a3_","i":"Ep9IFLmnLTwz_EfZCXOuVHcYFmoHNKgqz7nQ1ItKX9pc","s":"0","t":"rct","p":"EBSQD8MrJi-qTF--fg1hMT7a-sVacyFjeaPn3FduKNsc","kt":"1","wt":"0"}`
+	expectedVRCBytes := `{"v":"KERI10JSON0000a3_","i":"Ep9IFLmnLTwz_EfZCXOuVHcYFmoHNKgqz7nQ1ItKX9pc","s":"0","t":"rct","d":"EBSQD8MrJi-qTF--fg1hMT7a-sVacyFjeaPn3FduKNsc","kt":"1","wt":"0"}`
 
 	d, _ := json.Marshal(remoteICP)
 	assert.JSONEq(t, icpBytes, string(d))

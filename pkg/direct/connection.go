@@ -2,8 +2,10 @@ package direct
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"regexp"
 	"strconv"
@@ -29,7 +31,8 @@ var (
 )
 
 type conn struct {
-	conn net.Conn
+	reader *bufio.Reader
+	conn   net.Conn
 }
 
 func (r *conn) Write(msg *event.Message) error {
@@ -43,13 +46,16 @@ func (r *conn) Write(msg *event.Message) error {
 		return errors.Wrap(err, "unable to right message to stream outbound")
 	}
 
+	b, _ := json.Marshal(msg)
+	log.Print(msg.Event.Prefix, "sent event:\n", string(b), "\n\n")
+
 	return nil
 }
 
 func handleConnection(ioc *conn, id *keri.Keri) error {
 
 	for {
-		msg, err := readMessage(ioc.conn)
+		msg, err := readMessage(ioc.reader)
 		if err != nil {
 			return err
 		}
@@ -68,11 +74,10 @@ func handleConnection(ioc *conn, id *keri.Keri) error {
 	}
 }
 
-func readMessage(reader io.Reader) (*event.Message, error) {
-	c := bufio.NewReader(reader)
+func readMessage(reader *bufio.Reader) (*event.Message, error) {
 
 	// read a min sized buffer which contains the message length
-	h, err := c.Peek(MinSniffSize)
+	h, err := reader.Peek(MinSniffSize)
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +101,7 @@ func readMessage(reader io.Reader) (*event.Message, error) {
 	}
 
 	buff := make([]byte, size)
-	_, err = io.ReadFull(c, buff)
+	_, err = io.ReadFull(reader, buff)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +112,7 @@ func readMessage(reader io.Reader) (*event.Message, error) {
 		return nil, fmt.Errorf("unable to unmarshal event: (%v)", err)
 	}
 
-	sigs, err := derivation.ParseAttachedSignatures(c)
+	sigs, err := derivation.ParseAttachedSignatures(reader)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing sigs: %v", err)
 	}

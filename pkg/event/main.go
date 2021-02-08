@@ -151,7 +151,7 @@ func WithSequence(sequence int) EventOption {
 // WithDigest sets the digest for the event
 func WithDigest(digest string) EventOption {
 	return func(e *Event) error {
-		e.Digest = digest
+		e.PriorEventDigest = digest
 		return nil
 	}
 }
@@ -170,33 +170,11 @@ func WithPrefix(prefix string) EventOption {
 	}
 }
 
-func WithSeal(seal *Seal) EventOption {
+func WithSeals(seals SealArray) EventOption {
 	return func(e *Event) error {
-		e.Seals = []*Seal{seal}
+		e.Seals = seals
 		return nil
 	}
-}
-
-// NewInceptionEvent returns and incpetion configured with the provided parameters
-// New Inception Events will have empty 'v' and 'i' strings
-func NewInceptionEvent(opts ...EventOption) (*Event, error) {
-	st, _ := NewSigThreshold(1)
-	e := &Event{
-		EventType:        ilkString[ICP],
-		Sequence:         "0",
-		SigThreshold:     st,
-		WitnessThreshold: "0",
-		Witnesses:        []string{},
-		Config:           []prefix.Trait{},
-	}
-	for _, o := range opts {
-		err := o(e)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return e, nil
 }
 
 // NewEvent returns a new event with the specified options applied
@@ -228,6 +206,28 @@ func NewEvent(opts ...EventOption) (*Event, error) {
 	return e, nil
 }
 
+// NewInceptionEvent returns and incpetion configured with the provided parameters
+// New Inception Events will have empty 'v' and 'i' strings
+func NewInceptionEvent(opts ...EventOption) (*Event, error) {
+	st, _ := NewSigThreshold(1)
+	e := &Event{
+		EventType:        ilkString[ICP],
+		Sequence:         "0",
+		SigThreshold:     st,
+		WitnessThreshold: "0",
+		Witnesses:        []string{},
+		Config:           []prefix.Trait{},
+	}
+	for _, o := range opts {
+		err := o(e)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return e, nil
+}
+
 // NewRotationEvent returns and incpetion configured with the provided parameters
 // New Rotation Events will have empty 'v' and 'i' strings
 func NewRotationEvent(opts ...EventOption) (*Event, error) {
@@ -253,6 +253,39 @@ func NewRotationEvent(opts ...EventOption) (*Event, error) {
 
 	if rot.Next == "" {
 		return nil, errors.New("next commitment required for rot")
+	}
+
+	// Serialize with defaults to get correct length for version string
+	if rot.Version == "" {
+		rot.Version = DefaultVersionString(JSON)
+	}
+
+	eventBytes, err := Serialize(rot, JSON)
+	if err != nil {
+		return nil, err
+	}
+
+	rot.Version = VersionString(JSON, version.Code(), len(eventBytes))
+
+	return rot, nil
+}
+
+// NewRotationEvent returns and incpetion configured with the provided parameters
+// New Rotation Events will have empty 'v' and 'i' strings
+func NewInteractionEvent(opts ...EventOption) (*Event, error) {
+	rot := &Event{
+		EventType: ilkString[IXN],
+		Sequence:  "0",
+	}
+	for _, o := range opts {
+		err := o(rot)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if rot.Prefix == "" {
+		return nil, errors.New("prefix required for ixn")
 	}
 
 	// Serialize with defaults to get correct length for version string
