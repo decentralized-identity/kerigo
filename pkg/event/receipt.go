@@ -49,13 +49,11 @@ func TransferableReceipt(event *Event, estEvent *Event, code derivation.Code) (*
 
 // Recipt generates a receipt for the provided event
 func NonTransferableReceipt(event *Event, code derivation.Code) (*Event, error) {
-	evtSeal, err := NewEventSeal("dig", "pre", "0")
 	receipt, err := NewEvent(
-		WithType(VRC),
+		WithType(RCT),
 		WithSequence(event.SequenceInt()),
 		WithPrefix(event.Prefix),
 		WithDefaultVersion(JSON),
-		WithSeal(evtSeal),
 	)
 
 	if err != nil {

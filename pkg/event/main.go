@@ -7,6 +7,7 @@ import (
 
 	"github.com/decentralized-identity/kerigo/pkg/derivation"
 	"github.com/decentralized-identity/kerigo/pkg/prefix"
+	"github.com/decentralized-identity/kerigo/pkg/version"
 )
 
 type EventOption func(*Event) error
@@ -220,9 +221,48 @@ func NewEvent(opts ...EventOption) (*Event, error) {
 		return nil, errors.New("must sepcify an event type")
 	}
 
-	if (e.EventType != ilkString[ICP] && e.EventType != ilkString[VRC]) && e.Sequence == "0" {
+	if (e.EventType != ilkString[ICP] && e.EventType != ilkString[VRC] && e.EventType != ilkString[RCT]) && e.Sequence == "0" {
 		return nil, errors.New("only inception events may have a sequence of 0")
 	}
 
 	return e, nil
+}
+
+// NewRotationEvent returns and incpetion configured with the provided parameters
+// New Rotation Events will have empty 'v' and 'i' strings
+func NewRotationEvent(opts ...EventOption) (*Event, error) {
+	sith, _ := NewSigThreshold(1)
+	rot := &Event{
+		EventType:        ilkString[ROT],
+		Sequence:         "0",
+		SigThreshold:     sith,
+		WitnessThreshold: "0",
+		Witnesses:        []string{},
+		Config:           []prefix.Trait{},
+	}
+	for _, o := range opts {
+		err := o(rot)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if rot.Prefix == "" {
+		return nil, errors.New("prefix required for rot")
+	}
+
+	if rot.Next == "" {
+		return nil, errors.New("next commitment required for rot")
+	}
+
+	// Serialize with defaults to get correct length for version string
+	rot.Version = DefaultVersionString(JSON)
+	eventBytes, err := Serialize(rot, JSON)
+	if err != nil {
+		return nil, err
+	}
+
+	rot.Version = VersionString(JSON, version.Code(), len(eventBytes))
+
+	return rot, nil
 }

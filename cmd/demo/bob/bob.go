@@ -8,7 +8,7 @@ import (
 	"github.com/google/tink/go/keyset"
 
 	"github.com/decentralized-identity/kerigo/pkg/db/mem"
-	"github.com/decentralized-identity/kerigo/pkg/io/stream"
+	"github.com/decentralized-identity/kerigo/pkg/direct"
 	"github.com/decentralized-identity/kerigo/pkg/keri"
 	"github.com/decentralized-identity/kerigo/pkg/keymanager"
 )
@@ -40,7 +40,7 @@ func main() {
 		panic(err)
 	}
 
-	km, err = keymanager.NewKeyManager(a, store, keymanager.WithSecrets(secrets))
+	km, err = keymanager.NewKeyManager(keymanager.WithAEAD(a), keymanager.WithStore(store), keymanager.WithSecrets(secrets))
 	if err != nil {
 		panic(err)
 	}
@@ -52,7 +52,7 @@ func main() {
 
 	fmt.Printf("Direct Mode demo of Bob as %s on TCP port 5620 to port 5621\n\n\n", kerl.Prefix())
 
-	outb, err := stream.NewStreamOutbound(":5621", 60*time.Second)
+	cli, err := direct.DialTimeout(kerl, ":5621", 60*time.Second)
 	if err != nil {
 		panic(err)
 	}
@@ -62,12 +62,17 @@ func main() {
 		panic(err)
 	}
 
-	err = outb.Write(msg)
+	err = cli.Write(msg)
 	if err != nil {
 		panic(err)
 	}
 
-	err = kerl.HandleDirect(outb)
+	rot, err := kerl.Rotate()
+	if err != nil {
+		panic(err)
+	}
+
+	err = cli.Write(rot)
 	if err != nil {
 		panic(err)
 	}

@@ -11,6 +11,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/decentralized-identity/kerigo/pkg/db"
+	"github.com/decentralized-identity/kerigo/pkg/db/mem"
 	"github.com/decentralized-identity/kerigo/pkg/derivation"
 )
 
@@ -27,15 +28,17 @@ type KeyManager struct {
 	next      *key
 	enveloper *aead.KMSEnvelopeAEAD
 	store     db.DB
+	kw        tink.AEAD
 }
 
 type Option func(*KeyManager) error
 
-func NewKeyManager(kw tink.AEAD, store db.DB, opts ...Option) (*KeyManager, error) {
+func NewKeyManager(opts ...Option) (*KeyManager, error) {
 
 	km := &KeyManager{
 		secrets: []string{},
-		store:   store,
+		store:   mem.NewMemDB(),
+		kw:      &dummyAEAD{},
 	}
 
 	for _, o := range opts {
@@ -45,7 +48,7 @@ func NewKeyManager(kw tink.AEAD, store db.DB, opts ...Option) (*KeyManager, erro
 		}
 	}
 
-	km.enveloper = aead.NewKMSEnvelopeAEAD2(aead.AES256GCMKeyTemplate(), kw)
+	km.enveloper = aead.NewKMSEnvelopeAEAD2(aead.AES256GCMKeyTemplate(), km.kw)
 
 	err := km.loadKeys()
 	if err != nil {
@@ -66,6 +69,16 @@ func NewKeyManager(kw tink.AEAD, store db.DB, opts ...Option) (*KeyManager, erro
 	}
 
 	return km, nil
+}
+
+type dummyAEAD struct{}
+
+func (d *dummyAEAD) Encrypt(plaintext, additionalData []byte) ([]byte, error) {
+	return plaintext, nil
+}
+
+func (d *dummyAEAD) Decrypt(ciphertext, additionalData []byte) ([]byte, error) {
+	return ciphertext, nil
 }
 
 func (r *KeyManager) nextKeys() (*key, error) {
@@ -208,6 +221,20 @@ func (r *KeyManager) loadKey(name string) (*key, error) {
 func WithSecrets(s []string) Option {
 	return func(km *KeyManager) error {
 		km.secrets = s
+		return nil
+	}
+}
+
+func WithAEAD(a tink.AEAD) Option {
+	return func(km *KeyManager) error {
+		km.kw = a
+		return nil
+	}
+}
+
+func WithStore(store db.DB) Option {
+	return func(km *KeyManager) error {
+		km.store = store
 		return nil
 	}
 }
