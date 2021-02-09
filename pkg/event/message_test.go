@@ -7,15 +7,23 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/decentralized-identity/kerigo/pkg/derivation"
-	"github.com/decentralized-identity/kerigo/pkg/test"
+	"github.com/decentralized-identity/kerigo/pkg/prefix"
+	kms2 "github.com/decentralized-identity/kerigo/pkg/test/kms"
 )
 
 func TestMessageSerialization(t *testing.T) {
-	expectedMsgBytes := `{"v":"KERI10JSON0000e6_","i":"Eh0fefvTQ55Jwps4dVnIekf7mZgWoU8bCUsDsKeGiEgU","s":"0","t":"icp","kt":"1","k":["D69EflciVP9zgsihNU14Dbm2bPXoNGxKHK_BBVFMQ-YU"],"n":"E2N7cav-AXF8R86YPUWqo8oGu2YcdyFz_w6lTiNmmOY4","wt":"0","w":[],"c":[]}-AABAAjR8VViXgfgNv16q2ie-r_DRfyclW-5CNcka3_TRCK_909FczMuyD32-NJVEGWVQGMO7-npHfpC63AMgZ62yJAg`
+	expectedMsgBytes := `{"v":"KERI10JSON000000_","i":"Eh0fefvTQ55Jwps4dVnIekf7mZgWoU8bCUsDsKeGiEgU","s":"0","t":"icp","kt":"1","k":["D69EflciVP9zgsihNU14Dbm2bPXoNGxKHK_BBVFMQ-YU"],"n":"E2N7cav-AXF8R86YPUWqo8oGu2YcdyFz_w6lTiNmmOY4","wt":"0","w":[],"c":[]}-AABAA8UlKZCFEDmeWhk1MhyqwjXVobNEnjdApJ02k2ES3eDTT4jZBo8gZ0rdPRACS11xcCiXBYWLasL0bezI1JyzxBg`
 	secrets := []string{"ADW3o9m3udwEf0aoOdZLLJdf1aylokP0lwwI_M2J9h0s", "AagumsL8FeGES7tYcnr_5oN6qcwJzZfLKxoniKUpG4qc"}
-	kms := test.GetKMS(t, secrets)
+	kms := kms2.GetKMS(t, secrets)
 
-	icp, err := Incept(kms.PublicKey(), kms.Next())
+	keyDer, err := derivation.New(derivation.WithCode(derivation.Ed25519), derivation.WithRaw(kms.PublicKey()))
+	assert.NoError(t, err)
+
+	keyPre := prefix.New(keyDer)
+
+	nextKeyPre := prefix.New(kms.Next())
+
+	icp, err := NewInceptionEvent(WithPrefix("Eh0fefvTQ55Jwps4dVnIekf7mZgWoU8bCUsDsKeGiEgU"), WithKeys(keyPre), WithDefaultVersion(JSON), WithNext(1, derivation.Blake3256, nextKeyPre))
 	assert.NoError(t, err)
 
 	d, err := icp.Serialize()

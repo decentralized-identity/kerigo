@@ -158,7 +158,7 @@ func TestVerifyAndApply(t *testing.T) {
 
 	// invalid digest, should not apply
 	msg.Event.Sequence = "1"
-	msg.Event.Digest = "EAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	msg.Event.PriorEventDigest = "EAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 	err = l.Apply(msg)
 	if assert.NotNil(err) {
 		assert.Equal("invalid digest for new event", err.Error())
@@ -166,7 +166,7 @@ func TestVerifyAndApply(t *testing.T) {
 	assert.Len(l.Events, 1)
 
 	// Correct, should apply
-	msg.Event.Digest = "E9ZTKOhr-lqB7jbBMBpUIdMpfWvEswoMoc5UrwCRcTSc"
+	msg.Event.PriorEventDigest = "E9ZTKOhr-lqB7jbBMBpUIdMpfWvEswoMoc5UrwCRcTSc"
 	err = l.Apply(msg)
 	assert.Nil(err)
 	assert.Len(l.Events, 2)

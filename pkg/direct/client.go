@@ -1,6 +1,7 @@
 package direct
 
 import (
+	"bufio"
 	"context"
 	"log"
 	"net"
@@ -13,11 +14,17 @@ import (
 	"github.com/decentralized-identity/kerigo/pkg/keri"
 )
 
+const (
+	DefaultReceiptTimeout = 60 * time.Second
+)
+
 type Client struct {
 	addr string
 	ioc  *conn
 	id   *keri.Keri
 }
+
+type Notify func(rcpt *event.Event, err error)
 
 func Dial(id *keri.Keri, addr string) (*Client, error) {
 	return DialTimeout(id, addr, 0)
@@ -41,7 +48,8 @@ func DialTimeout(id *keri.Keri, addr string, timeout time.Duration) (*Client, er
 		}
 
 		o.ioc = &conn{
-			conn: c,
+			reader: bufio.NewReader(c),
+			conn:   c,
 		}
 		return nil
 	}, backoff.WithContext(backoff.NewExponentialBackOff(), ctx))
@@ -49,6 +57,8 @@ func DialTimeout(id *keri.Keri, addr string, timeout time.Duration) (*Client, er
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to connect after timeout")
 	}
+
+	log.Print(id.Prefix(), ":\n", "connected to", addr, "\n\n")
 
 	go func() {
 		err := handleConnection(o.ioc, o.id)
@@ -60,6 +70,26 @@ func DialTimeout(id *keri.Keri, addr string, timeout time.Duration) (*Client, er
 }
 
 func (r *Client) Write(msg *event.Message) error {
+	err := r.ioc.Write(msg)
+	if err != nil {
+		return errors.Wrap(err, "unable to right message to stream outbound")
+	}
+
+	return nil
+}
+
+func (r *Client) WriteNotify(msg *event.Message, n Notify) error {
+	rcptCh, errCh := r.id.WaitForReceipt(msg.Event, DefaultReceiptTimeout)
+
+	go func() {
+		select {
+		case rcpt := <-rcptCh:
+			n(rcpt, nil)
+		case err := <-errCh:
+			n(nil, err)
+		}
+	}()
+
 	err := r.ioc.Write(msg)
 	if err != nil {
 		return errors.Wrap(err, "unable to right message to stream outbound")

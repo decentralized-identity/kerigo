@@ -97,7 +97,8 @@ type Event struct {
 	Prefix            string         `json:"i,omitempty"`
 	Sequence          string         `json:"s,omitempty"`
 	EventType         string         `json:"t"`
-	Digest            string         `json:"p,omitempty"`
+	EventDigest       string         `json:"d,omitempty"`
+	PriorEventDigest  string         `json:"p,omitempty"`
 	SigThreshold      *SigThreshold  `json:"kt,omitempty"`
 	Keys              []string       `json:"k,omitempty"`
 	Next              string         `json:"n,omitempty"`
@@ -199,7 +200,7 @@ func (e *Event) MarshalJSON() ([]byte, error) {
 			Prefix:    e.Prefix,
 			Sequence:  e.Sequence,
 			EventType: e.EventType,
-			Digest:    e.Digest,
+			Digest:    e.EventDigest,
 			Data:      e.Seals[0],
 		})
 	}

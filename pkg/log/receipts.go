@@ -7,7 +7,7 @@ import (
 type Register map[string][]*event.Message
 
 func (r Register) Add(vrc *event.Message) error {
-	dig := vrc.Event.Digest
+	dig := vrc.Event.EventDigest
 	r[dig] = append(r[dig], vrc)
 	return nil
 }

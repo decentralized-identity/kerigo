@@ -29,7 +29,7 @@ func TestAddReceipt(t *testing.T) {
 	err = r.Add(msg)
 	assert.NoError(t, err)
 
-	dig := vrc.Digest
+	dig := vrc.EventDigest
 
 	rcpt := r[dig]
 	assert.Len(t, rcpt, 1)

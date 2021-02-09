@@ -9,7 +9,7 @@ import (
 
 	"github.com/decentralized-identity/kerigo/pkg/derivation"
 	"github.com/decentralized-identity/kerigo/pkg/prefix"
-	"github.com/decentralized-identity/kerigo/pkg/test"
+	testkms "github.com/decentralized-identity/kerigo/pkg/test/kms"
 )
 
 func TestNewInceptionEvent(t *testing.T) {
@@ -64,16 +64,25 @@ func TestNext(t *testing.T) {
 
 }
 
+func TestGetDigest(t *testing.T) {
+
+	icp := incept(t, "ADW3o9m3udwEf0aoOdZLLJdf1aylokP0lwwI_M2J9h0s", "AagumsL8FeGES7tYcnr_5oN6qcwJzZfLKxoniKUpG4qc")
+
+	dig, err := icp.GetDigest()
+	assert.NoError(t, err)
+	assert.Equal(t, "EeM1ZikRHU9XKxd3pQrjLOPyP8bQkQQriYBk-_UYpQfE", dig)
+
+}
+
 func TestRotationEvent(t *testing.T) {
 	t.Run("happy", func(t *testing.T) {
-		expectedRotBytes := `{"v":"KERI10JSON0000ba_","i":"Eh0fefvTQ55Jwps4dVnIekf7mZgWoU8bCUsDsKeGiEgU","s":"0","t":"rot","kt":"1","n":"EOF414QEuea9A-Svo-tzipeVfk0-DvtAsaLULWCnHXw4","wt":"0","wr":[],"wa":[],"a":[]}`
+		expectedRotBytes := `{"v":"KERI10JSON0000ba_","i":"Efxqin4pHh--KbxFN7xcOnOakf2CAK19zknumybXxabI","s":"0","t":"rot","kt":"1","n":"EOF414QEuea9A-Svo-tzipeVfk0-DvtAsaLULWCnHXw4","wt":"0","wr":[],"wa":[],"a":[]}`
 		secrets := []string{"ADW3o9m3udwEf0aoOdZLLJdf1aylokP0lwwI_M2J9h0s", "AagumsL8FeGES7tYcnr_5oN6qcwJzZfLKxoniKUpG4qc", "Ap5waegfnuP6ezC18w7jQiPyQwYYsp9Yv9rYMlKAYL8k"}
-		kms := test.GetKMS(t, secrets)
+		kms := testkms.GetKMS(t, secrets)
 
-		icp, err := Incept(kms.PublicKey(), kms.Next())
-		assert.NoError(t, err)
+		icp := incept(t, "ADW3o9m3udwEf0aoOdZLLJdf1aylokP0lwwI_M2J9h0s", "AagumsL8FeGES7tYcnr_5oN6qcwJzZfLKxoniKUpG4qc")
 
-		err = kms.Rotate()
+		err := kms.Rotate()
 		assert.NoError(t, err)
 
 		nextPre := prefix.New(kms.Next())
@@ -97,5 +106,21 @@ func TestRotationEvent(t *testing.T) {
 		assert.Error(t, err)
 		assert.Nil(t, evt)
 		assert.Equal(t, "next commitment required for rot", err.Error())
+	})
+}
+
+func TestInteractionEvent(t *testing.T) {
+	t.Run("happy", func(t *testing.T) {
+		expectedRotBytes := `{"v":"KERI10JSON000065_","i":"Efxqin4pHh--KbxFN7xcOnOakf2CAK19zknumybXxabI","s":"1","t":"ixn","a":[]}`
+
+		icp := incept(t, "ADW3o9m3udwEf0aoOdZLLJdf1aylokP0lwwI_M2J9h0s", "AagumsL8FeGES7tYcnr_5oN6qcwJzZfLKxoniKUpG4qc")
+
+		evt, err := NewInteractionEvent(WithPrefix(icp.Prefix), WithSequence(1))
+		assert.NoError(t, err)
+
+		b, err := evt.Serialize()
+		assert.NoError(t, err)
+
+		assert.Equal(t, expectedRotBytes, string(b))
 	})
 }
