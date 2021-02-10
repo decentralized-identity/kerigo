@@ -3,6 +3,7 @@ package event
 import (
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"strconv"
 
 	"github.com/mitchellh/mapstructure"
@@ -243,8 +244,25 @@ func (e *Event) WitnessDerivation(index int) (*derivation.Derivation, error) {
 	return derivation.FromPrefix(e.Witnesses[index])
 }
 
+// NextDigest returns the calculated next digest for the event
+func (e *Event) NextDigest(code derivation.Code) (string, error) {
+	var kps []prefix.Prefix
+	for i, key := range e.Keys {
+		kp, err := prefix.FromString(key)
+		if err != nil {
+			return "", fmt.Errorf("unable to parse key prefix %d (%s)", i, err.Error())
+		}
+		kps = append(kps, kp)
+	}
+
+	return NextDigest(e.SigThreshold.String(), code, kps...)
+}
+
 func (e *Event) GetDigest() (string, error) {
 	ser, err := e.Serialize()
+	if err != nil {
+		return "", err
+	}
 
 	der, err := derivation.New(derivation.WithCode(derivation.Blake3256))
 	if err != nil {
@@ -412,4 +430,37 @@ func (e *Event) Serialize() ([]byte, error) {
 	}
 
 	return Serialize(e, format)
+}
+
+func NextDigest(threshold string, code derivation.Code, keys ...prefix.Prefix) (string, error) {
+	if !code.SelfAddressing() {
+		return "", errors.New("next keys must be self-addressing")
+	}
+
+	// digest the threshold
+	der, err := derivation.New(derivation.WithCode(code))
+	if err != nil {
+		return "", err
+	}
+
+	_, err = der.Derive([]byte(threshold))
+	if err != nil {
+		return "", err
+	}
+
+	sint := new(big.Int)
+	sint.SetBytes(der.Raw)
+	for ki := range keys {
+		keyRaw, _ := der.Derive([]byte(keys[ki].String()))
+		kint := new(big.Int)
+		kint.SetBytes(keyRaw)
+		_ = sint.Xor(sint, kint)
+	}
+
+	nextDig, err := derivation.New(derivation.WithCode(code), derivation.WithRaw(sint.Bytes()))
+	if err != nil {
+		return "", err
+	}
+
+	return nextDig.AsPrefix(), nil
 }

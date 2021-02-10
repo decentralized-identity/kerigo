@@ -89,7 +89,7 @@ func incept(t *testing.T, secret, next string) *Event {
 
 	nextKeyPre := prefix.New(nextPubDer)
 
-	icp, err := NewInceptionEvent(WithKeys(keyPre), WithDefaultVersion(JSON), WithNext(1, derivation.Blake3256, nextKeyPre))
+	icp, err := NewInceptionEvent(WithKeys(keyPre), WithDefaultVersion(JSON), WithNext("1", derivation.Blake3256, nextKeyPre))
 	assert.NoError(t, err)
 
 	// Serialize with defaults to get correct length for version string

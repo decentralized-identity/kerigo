@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 	"strconv"
+	"strings"
 
 	"github.com/decentralized-identity/kerigo/pkg/derivation"
 	"github.com/pkg/errors"
@@ -101,6 +102,8 @@ func (s *SigThreshold) UnmarshalJSON(in []byte) error {
 	return nil
 }
 
+// parseConditions iterates over string representation of fractional
+// weights and parses them to bit.Rat
 func parseConditions(conditions []string) ([]*big.Rat, error) {
 	converted := []*big.Rat{}
 	for _, c := range conditions {
@@ -150,6 +153,26 @@ func (s *SigThreshold) Satisfied(sigs []derivation.Derivation) bool {
 	}
 
 	return true
+}
+
+// String returns the threshold as a raw string representation
+// sufficient for use in the next digest commitment
+func (s *SigThreshold) String() string {
+	var b strings.Builder
+	for i, conditions := range s.conditions {
+		if i != 0 {
+			b.Write([]byte(`&`))
+		}
+		for j, c := range conditions {
+			if j == 0 {
+				fmt.Fprintf(&b, "%s", c.RatString())
+			} else {
+				fmt.Fprintf(&b, ",%s", c.RatString())
+			}
+		}
+
+	}
+	return b.String()
 }
 
 // returns true if this is a weighted threshold - i.e. there

@@ -45,7 +45,7 @@ func TestNext(t *testing.T) {
 	d3, _ := derivation.FromPrefix("B8T4xkb8En6o0Uo5ZImco1_08gT5zcYnXzizUPVNzicw")
 	d3p := prefix.New(d3)
 
-	event, err := NewEvent(WithType(ICP), WithNext(2, derivation.Blake3256, d1p, d2p, d3p))
+	event, err := NewEvent(WithType(ICP), WithNext("2", derivation.Blake3256, d1p, d2p, d3p))
 	assert.Nil(err)
 	assert.Equal("ED8YvDrXvGuaIVZ69XsBVA5YN2pNTfQOFwgeloVHeWKs", event.Next)
 
@@ -58,7 +58,7 @@ func TestNext(t *testing.T) {
 	basicDerivation, err := derivation.New(derivation.WithCode(derivation.Ed25519), derivation.WithRaw(edPub.(ed25519.PublicKey)))
 	basicPre := prefix.New(basicDerivation)
 
-	event, err = NewEvent(WithType(ICP), WithNext(1, derivation.Blake3256, basicPre))
+	event, err = NewEvent(WithType(ICP), WithNext("1", derivation.Blake3256, basicPre))
 	assert.NoError(err)
 	assert.Equal("EPYuj8mq_PYYsoBKkzX1kxSPGYBWaIya3slgCOyOtlqU", event.Next)
 
@@ -87,7 +87,7 @@ func TestRotationEvent(t *testing.T) {
 
 		nextPre := prefix.New(kms.Next())
 
-		evt, err := NewRotationEvent(WithPrefix(icp.Prefix), WithNext(1, derivation.Blake3256, nextPre))
+		evt, err := NewRotationEvent(WithPrefix(icp.Prefix), WithNext("1", derivation.Blake3256, nextPre))
 		assert.NoError(t, err)
 
 		b, err := evt.Serialize()
