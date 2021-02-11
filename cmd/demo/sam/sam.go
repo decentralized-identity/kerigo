@@ -1,7 +1,9 @@
 package main
 
 import (
+	"flag"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/google/tink/go/aead"
@@ -29,6 +31,9 @@ var (
 )
 
 func main() {
+	e := flag.Int("e", 60, "Expire time for demo. Default is 60.0.")
+	flag.Parse()
+
 	store := mem.NewMemDB()
 
 	kh, err := keyset.NewHandle(aead.AES256GCMKeyTemplate())
@@ -53,7 +58,7 @@ func main() {
 
 	fmt.Printf("Direct Mode demo of Sam as %s on TCP port 5620 to port 5621\n\n\n", kerl.Prefix())
 
-	cli, err := direct.DialTimeout(kerl, ":5621", 60*time.Second)
+	cli, err := direct.DialTimeout(kerl, ":5621", time.Duration(*e)*time.Second)
 	if err != nil {
 		panic(err)
 	}
@@ -94,6 +99,8 @@ func main() {
 		}
 	})
 
-	ch := make(chan bool)
-	<-ch
+	select {
+	case <-time.After(time.Duration(*e) * time.Second):
+		os.Exit(0)
+	}
 }
