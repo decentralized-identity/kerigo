@@ -1,9 +1,12 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"net"
+	"os"
+	"time"
 
 	"github.com/google/tink/go/aead"
 	"github.com/google/tink/go/keyset"
@@ -29,6 +32,8 @@ var (
 )
 
 func main() {
+	e := flag.Int("e", 60, "Expire time for demo. Default is 60.0.")
+	flag.Parse()
 
 	store := mem.NewMemDB()
 
@@ -60,6 +65,13 @@ func main() {
 			return kerl
 		},
 	}
+
+	go func(t int) {
+		select {
+		case <-time.After(time.Duration(t) * time.Second):
+			os.Exit(0)
+		}
+	}(*e)
 
 	err = srv.ListenAndServer()
 	log.Printf("direct mode server exited with %v\n", err)
