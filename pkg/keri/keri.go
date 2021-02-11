@@ -158,7 +158,7 @@ func (r *Keri) Rotate() (*event.Message, error) {
 		event.WithKeys(keyPre),
 		event.WithDefaultVersion(event.JSON),
 		event.WithSequence(sn),
-		event.WithNext(1, derivation.Blake3256, nextKeyPre),
+		event.WithNext("1", derivation.Blake3256, nextKeyPre),
 	)
 
 	if err != nil {
@@ -382,7 +382,7 @@ func createInception(signing ed25519.PublicKey, next *derivation.Derivation) (*e
 
 	nextKeyPre := prefix.New(next)
 
-	icp, err := event.NewInceptionEvent(event.WithKeys(keyPre), event.WithDefaultVersion(event.JSON), event.WithNext(1, derivation.Blake3256, nextKeyPre))
+	icp, err := event.NewInceptionEvent(event.WithKeys(keyPre), event.WithDefaultVersion(event.JSON), event.WithNext("1", derivation.Blake3256, nextKeyPre))
 	if err != nil {
 		return nil, err
 	}

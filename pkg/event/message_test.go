@@ -2,7 +2,6 @@ package event
 
 import (
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 
@@ -23,7 +22,11 @@ func TestMessageSerialization(t *testing.T) {
 
 	nextKeyPre := prefix.New(kms.Next())
 
-	icp, err := NewInceptionEvent(WithPrefix("Eh0fefvTQ55Jwps4dVnIekf7mZgWoU8bCUsDsKeGiEgU"), WithKeys(keyPre), WithDefaultVersion(JSON), WithNext(1, derivation.Blake3256, nextKeyPre))
+	icp, err := NewInceptionEvent(
+		WithPrefix("Eh0fefvTQ55Jwps4dVnIekf7mZgWoU8bCUsDsKeGiEgU"),
+		WithKeys(keyPre),
+		WithDefaultVersion(JSON),
+		WithNext("1", derivation.Blake3256, nextKeyPre))
 	assert.NoError(t, err)
 
 	d, err := icp.Serialize()
@@ -38,7 +41,6 @@ func TestMessageSerialization(t *testing.T) {
 	msg := &Message{
 		Event:      icp,
 		Signatures: []derivation.Derivation{*sig},
-		Seen:       time.Time{},
 	}
 
 	b, err := msg.Serialize()

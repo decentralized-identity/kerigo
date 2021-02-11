@@ -250,3 +250,16 @@ func TestSatisfied(t *testing.T) {
 	sigs = []derivation.Derivation{{KeyIndex: 0}, {KeyIndex: 2}, {KeyIndex: 3}, {KeyIndex: 4}, {KeyIndex: 5}}
 	assert.True(st.Satisfied(sigs))
 }
+
+func TestSigThresholdString(t *testing.T) {
+	assert := assert.New(t)
+
+	st, _ := NewSigThreshold(1)
+	assert.Equal("1", st.String())
+
+	st, _ = NewWeighted("1/2", "1/4", "1/4")
+	assert.Equal("1/2,1/4,1/4", st.String())
+
+	st, _ = NewMultiWeighted([]string{"1/2", "1/2", "1/4", "1/4", "1/4", "1/4"}, []string{"1", "1"}, []string{"1"})
+	assert.Equal("1/2,1/2,1/4,1/4,1/4,1/4&1,1&1", st.String())
+}

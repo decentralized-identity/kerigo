@@ -38,7 +38,7 @@ func Inception(t *testing.T, edPub ed25519.PublicKey, nextPubDer *derivation.Der
 
 	nextKeyPre := prefix.New(nextPubDer)
 
-	icp, err := event.NewInceptionEvent(event.WithKeys(keyPre), event.WithDefaultVersion(event.JSON), event.WithNext(1, derivation.Blake3256, nextKeyPre))
+	icp, err := event.NewInceptionEvent(event.WithKeys(keyPre), event.WithDefaultVersion(event.JSON), event.WithNext("1", derivation.Blake3256, nextKeyPre))
 	assert.NoError(t, err)
 
 	// Serialize with defaults to get correct length for version string

@@ -1,6 +1,7 @@
 package event
 
 import (
+	"crypto/ed25519"
 	"fmt"
 	"math/big"
 	"testing"
@@ -110,4 +111,48 @@ func TestSequenceInt(t *testing.T) {
 
 	e.Sequence = fmt.Sprintf("%x", 93840482)
 	assert.Equal(93840482, e.SequenceInt())
+}
+
+func TestNextDigest(t *testing.T) {
+	assert := assert.New(t)
+	d1, _ := derivation.FromPrefix("BrHLayDN-mXKv62DAjFLX1_Y5yEUe0vA9YPe_ihiKYHE")
+	d1p := prefix.New(d1)
+	d2, _ := derivation.FromPrefix("BujP_71bmWFVcvFmkE9uS8BTZ54GIstZ20nj_UloF8Rk")
+	d2p := prefix.New(d2)
+	d3, _ := derivation.FromPrefix("B8T4xkb8En6o0Uo5ZImco1_08gT5zcYnXzizUPVNzicw")
+	d3p := prefix.New(d3)
+
+	evnt, _ := NewEvent(WithType(ROT), WithKeys(d1p, d2p, d3p), WithThreshold(2), WithSequence(2))
+
+	next, err := NextDigest("2", derivation.Blake3256, d1p, d2p, d3p)
+	assert.Nil(err)
+	assert.Equal("ED8YvDrXvGuaIVZ69XsBVA5YN2pNTfQOFwgeloVHeWKs", next)
+
+	next, err = evnt.NextDigest(derivation.Blake3256)
+	assert.Nil(err)
+	assert.Equal("ED8YvDrXvGuaIVZ69XsBVA5YN2pNTfQOFwgeloVHeWKs", next)
+
+	next, err = NextDigest("1/2,1/2&1&1/4,1/4,1/4,1/4", derivation.Blake3256, d1p, d2p, d3p)
+	assert.Nil(err)
+	assert.Equal("EO5zVmvz-0yt1PlNvIG0iI-8X6qmkGwt-sQfcQ1GvmRc", next)
+
+	evnt.SigThreshold, _ = NewMultiWeighted([]string{"1/2", "1/2"}, []string{"1"}, []string{"1/4", "1/4", "1/4", "1/4"})
+	next, err = evnt.NextDigest(derivation.Blake3256)
+	assert.Nil(err)
+	assert.Equal("EO5zVmvz-0yt1PlNvIG0iI-8X6qmkGwt-sQfcQ1GvmRc", next)
+
+	//test case from Bob demo in python
+	der, err := derivation.FromPrefix("A6zz7M08-HQSFq92sJ8KJOT2cZ47x7pXFQLPB0pckB3Q")
+	assert.NoError(err)
+	edPriv := ed25519.NewKeyFromSeed(der.Raw)
+	edPub := edPriv.Public()
+
+	basicDerivation, err := derivation.New(derivation.WithCode(derivation.Ed25519), derivation.WithRaw(edPub.(ed25519.PublicKey)))
+	assert.Nil(err)
+	basicPre := prefix.New(basicDerivation)
+
+	next, err = NextDigest("1", derivation.Blake3256, basicPre)
+	assert.NoError(err)
+	assert.Equal("EPYuj8mq_PYYsoBKkzX1kxSPGYBWaIya3slgCOyOtlqU", next)
+
 }

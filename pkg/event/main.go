@@ -3,7 +3,6 @@ package event
 import (
 	"errors"
 	"fmt"
-	"math/big"
 
 	"github.com/decentralized-identity/kerigo/pkg/derivation"
 	"github.com/decentralized-identity/kerigo/pkg/prefix"
@@ -41,38 +40,14 @@ func WithWitnesses(keys ...prefix.Prefix) EventOption {
 // along with all of the keys to be rotated to, combined using XOR.
 // Each of the provided keys, along with the derivation to use for the next,
 // must use the same derivaiton code.
-func WithNext(threshold int, code derivation.Code, keys ...prefix.Prefix) EventOption {
+func WithNext(threshold string, code derivation.Code, keys ...prefix.Prefix) EventOption {
 	return func(e *Event) error {
-		if !code.SelfAddressing() {
-			return errors.New("next keys must be self-addressing")
-		}
-
-		// digest the threshold
-		der, err := derivation.New(derivation.WithCode(code))
+		next, err := NextDigest(threshold, code, keys...)
 		if err != nil {
 			return err
 		}
 
-		_, err = der.Derive([]byte(fmt.Sprintf("%x", threshold)))
-		if err != nil {
-			return err
-		}
-
-		sint := new(big.Int)
-		sint.SetBytes(der.Raw)
-		for ki := range keys {
-			keyRaw, _ := der.Derive([]byte(keys[ki].String()))
-			kint := new(big.Int)
-			kint.SetBytes(keyRaw)
-			_ = sint.Xor(sint, kint)
-		}
-
-		nextDig, err := derivation.New(derivation.WithCode(code), derivation.WithRaw(sint.Bytes()))
-		if err != nil {
-			return err
-		}
-
-		e.Next = nextDig.AsPrefix()
+		e.Next = next
 		return nil
 	}
 }
