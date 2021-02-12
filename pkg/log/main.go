@@ -13,6 +13,7 @@ import (
 	"github.com/decentralized-identity/kerigo/pkg/db"
 	"github.com/decentralized-identity/kerigo/pkg/derivation"
 	"github.com/decentralized-identity/kerigo/pkg/event"
+	"github.com/decentralized-identity/kerigo/pkg/prefix"
 )
 
 // Log contains the Key Event Log for a given identifier
@@ -210,7 +211,9 @@ func (l *Log) Apply(e *event.Message) error {
 	}
 
 	// mark the event as seen
-	e.Seen = time.Now().UTC()
+	if e.Seen.IsZero() {
+		e.Seen = time.Now().UTC()
+	}
 
 	if l.db.LogSize(l.prefix) == 0 {
 		if e.Event.EventType != event.ICP.String() {
@@ -226,12 +229,31 @@ func (l *Log) Apply(e *event.Message) error {
 		return nil
 	}
 
-	current := l.Current()
+	state, err := l.KeyState()
+	if err != nil {
+		return fmt.Errorf("unable to build key state (%s)", err.Error())
+	}
 
 	// add the signature to already applied event
-	if e.Event.SequenceInt() <= current.SequenceInt() {
+	if e.Event.SequenceInt() <= state.LastEvent.SequenceInt() {
+		// TODO: an edge case - you will need to validate
+		// the signatures AS OF the key state that was valid for this event seq
+		// so, for example, if this is for seq 7, then 8 was a valid ROT, you could still
+		// collect valid sigs for seq 7, but the would no longer be valid as of the current
+		// key state message (since it takes into account ROT at 8)
+
 		return l.AddSignatures(e)
-	} else if e.Event.SequenceInt() != current.SequenceInt()+1 {
+	} else if e.Event.SequenceInt() != state.LastEstablishment.SequenceInt()+1 {
+		// if there are no attached signatures to the event, we do not escrow
+		// DOS prevention - flooding an escrow with unverifiable events
+		// TODO: currently we are not considering this an error condition, is it?
+		if len(e.Signatures) == 0 {
+			return nil
+		}
+
+		// We just add the event to the pending escrow: we cannot validate the signtures
+		// until we get caught up since any of the previous missing events could be
+		// ROT
 		err := l.Pending.Add(e)
 		if err != nil {
 			return fmt.Errorf("unable to escrow event (%s)", err)
@@ -240,11 +262,56 @@ func (l *Log) Apply(e *event.Message) error {
 		return nil
 	}
 
+	// verify the signatures for this event
+	// Two paths: if this is a ROT event, we use the current keys
+	// if this is any other type, we use the key state
+	if e.Event.EventType == event.ROT.String() {
+		err = VerifySigs(e.Event, e)
+	} else {
+		err = VerifySigs(state, e)
+	}
+
+	if err != nil {
+		return err
+	}
+
+	// if this is a rotation event, we must validate the next keys
+	if e.Event.ILK() == event.ROT {
+		keyPre := []prefix.Prefix{}
+		for _, k := range e.Event.Keys {
+			kp, err := prefix.FromString(k)
+			if err != nil {
+				return fmt.Errorf("unable to verify next digest (%s)", err.Error())
+			}
+			keyPre = append(keyPre, kp)
+		}
+
+		lastEstablisment := l.EventAt(state.LastEstablishment.SequenceInt())
+		lastNextDig, err := derivation.FromPrefix(lastEstablisment.Event.Next)
+		if err != nil {
+			return fmt.Errorf("unable to parse next digest from last establishment event (%s)", err.Error())
+		}
+
+		// calculate the next digest based on the current keys/signing threshold
+		currentNextDig, err := e.Event.NextDigest(lastNextDig.Code)
+		if err != nil {
+			return fmt.Errorf("unable to parse next digest event (%s)", err.Error())
+		}
+
+		// this should match what was stored in the last establishment
+		if currentNextDig != lastNextDig.AsPrefix() {
+			return errors.New("next digest invalid")
+		}
+	}
+
+	// to support digest agility, we allow the current event to dictate what
+	// digest they want to use for the prior event
 	inDerivation, err := derivation.FromPrefix(e.Event.PriorEventDigest)
 	if err != nil {
 		return fmt.Errorf("unable to determine digest derivation (%s)", err)
 	}
 
+	current := l.Current()
 	curSerialized, err := current.Serialize()
 	if err != nil {
 		return fmt.Errorf("unable to serialize current event (%s)", err)
@@ -256,6 +323,8 @@ func (l *Log) Apply(e *event.Message) error {
 	}
 
 	if !bytes.Equal(curDigest, inDerivation.Raw) {
+		// someone has tried to add an invalid event to the log
+		_ = l.Duplicitous.Add(e)
 		return errors.New("invalid digest for new event")
 	}
 
@@ -284,8 +353,8 @@ func (l *Log) Apply(e *event.Message) error {
 	// we currently do not consider any of these errors that need to be addressed
 	// TODO: handle
 	if err == nil {
-		for i, _ := range dups {
-			l.Duplicitous.Add(dups[i])
+		for i := range dups {
+			_ = l.Duplicitous.Add(dups[i])
 		}
 	}
 
@@ -294,8 +363,23 @@ func (l *Log) Apply(e *event.Message) error {
 	next := l.Pending.ForSequence(current.SequenceInt() + 1)
 	if len(next) > 0 {
 		sort.Sort(ByDate(next))
-		// return nil
-		return l.Apply(next[0])
+		// we iterate over the events, sorted by first received.
+		// if an event is applied any others are moved to the
+		// duplicitous escrow, so we can just return
+		// if the event is still waiting for additional signatures
+		// it will remain in escrow, and we can return (since it was)
+		// first seen,
+		// If there is an error, for example the
+		for i := range next {
+			err = l.Apply(next[i])
+			if err == nil {
+				return nil
+			}
+
+			// there as some other error applying the event to the log
+			// at this point we dump from escrow and continue on
+			l.Pending.Remove(next[i])
+		}
 	}
 
 	b, _ := json.Marshal(e.Event)
@@ -313,9 +397,59 @@ func (l *Log) ApplyReceipt(vrc *event.Message) error {
 	return nil
 }
 
+// VerifySigs takes the current log key state and an event message
+// and validates the attached signatures
+func VerifySigs(state *event.Event, m *event.Message) error {
+	mRaw, err := m.Event.Serialize()
+	if err != nil {
+		return err
+	}
+
+	if len(m.Signatures) == 0 {
+		return errors.New("no attached signatures to verify")
+	}
+
+	for _, sig := range m.Signatures {
+		keyD, err := state.KeyDerivation(int(sig.KeyIndex))
+		if err != nil {
+			return fmt.Errorf("unable to get key derivation for signing key at index %d (%s)", sig.KeyIndex, err)
+		}
+
+		err = derivation.VerifyWithAttachedSignature(keyD, &sig, mRaw)
+		if err != nil {
+			return fmt.Errorf("Invalid signature for key at index %d", sig.KeyIndex)
+		}
+	}
+
+	return nil
+}
+
+// Verify the event signatures against the current log
+// establishment event
+// TODO: do we need this?
+func (l *Log) Verify(m *event.Message) error {
+	if l.db.LogSize(l.prefix) == 0 {
+		if m.Event.EventType != event.ICP.String() {
+			return errors.New("first event in an empty log must be an inception event")
+		}
+		// If this is the first event in a log there is nothing to verify
+		return nil
+	}
+
+	state, err := l.KeyState()
+	if err != nil {
+		return fmt.Errorf("unable to build state (%s)", err.Error())
+	}
+
+	if m.Event.EventType == event.ROT.String() {
+		state = m.Event
+	}
+
+	return VerifySigs(state, m)
+}
+
 func (l *Log) ReceiptsForEvent(evt *event.Event) []*event.Message {
 	dig, _ := evt.GetDigest()
-	fmt.Println(dig)
 	rcpts := l.Receipts[dig]
 	return rcpts
 }
@@ -351,56 +485,12 @@ func (l *Log) AddSignatures(e *event.Message) error {
 
 	if newDigest != extDigest {
 		// likely duplicitous Event!
-		l.Duplicitous.Add(e)
+		// if adding to the duplicitous escrow fails do not consider an error (at this point)
+		_ = l.Duplicitous.Add(e)
 		return errors.New("unable to add signature to existing event (new event digest does not match)")
 	}
 
 	ext.Signatures = mergeSignatures(ext.Signatures, e.Signatures)
-
-	return nil
-}
-
-// Verify the event signatures against the current log
-// establishment event
-func (l *Log) Verify(m *event.Message) error {
-	if m.Event.Prefix != l.prefix {
-		return errors.New("invalid event for this log")
-	}
-
-	var currentEvent *event.Event
-	if l.db.LogSize(l.prefix) == 0 {
-		if m.Event.EventType != event.ICP.String() {
-			return errors.New("first event in an empty log must be an inception event")
-		}
-		currentEvent = m.Event
-	} else {
-		if m.Event.ILK() == event.ROT {
-			currentEvent = m.Event
-		} else {
-			currentEvent = l.CurrentEstablishment()
-		}
-	}
-
-	mRaw, err := m.Event.Serialize()
-	if err != nil {
-		return err
-	}
-
-	if len(m.Signatures) == 0 {
-		return errors.New("no attached signatures to verify")
-	}
-
-	for _, sig := range m.Signatures {
-		keyD, err := currentEvent.KeyDerivation(int(sig.KeyIndex))
-		if err != nil {
-			return fmt.Errorf("unable to get key derivation for signing key at index %d (%s)", sig.KeyIndex, err)
-		}
-
-		err = derivation.VerifyWithAttachedSignature(keyD, &sig, mRaw)
-		if err != nil {
-			return fmt.Errorf("invalid signature for key at index %d", sig.KeyIndex)
-		}
-	}
 
 	return nil
 }
