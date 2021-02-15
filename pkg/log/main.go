@@ -10,16 +10,18 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/decentralized-identity/kerigo/pkg/db"
 	"github.com/decentralized-identity/kerigo/pkg/derivation"
 	"github.com/decentralized-identity/kerigo/pkg/event"
 )
 
 // Log contains the Key Event Log for a given identifier
 type Log struct {
-	Events      []*event.Message // ordered Key events
-	Receipts    Register         // receipts for Events
-	Pending     Escrow           // pending events
-	Duplicitous Escrow           // escrow of duplicitous events
+	db          db.DB
+	prefix      string
+	Receipts    Register // receipts for Events
+	Pending     Escrow   // pending events
+	Duplicitous Escrow   // escrow of duplicitous events
 }
 
 // BySequence implements the sort.Inteface for log events
@@ -42,9 +44,10 @@ func (a ByDate) Less(i, j int) bool {
 	return a[i].Seen.Before(a[j].Seen)
 }
 
-func New() *Log {
+func New(prefix string, db db.DB) *Log {
 	return &Log{
-		Events:      []*event.Message{},
+		db:          db,
+		prefix:      prefix,
 		Pending:     map[string]*event.Message{},
 		Duplicitous: map[string]*event.Message{},
 		Receipts:    Register{},
@@ -53,63 +56,64 @@ func New() *Log {
 
 // Inception returns the inception event for this log
 func (l *Log) Inception() *event.Event {
-	for _, e := range l.Events {
-		if e.Event.EventType == event.ICP.String() {
-			return e.Event
-		}
+
+	evt, err := l.db.Inception(l.prefix)
+	if err != nil {
+		return nil
 	}
-	return nil
+
+	return evt.Event
 }
 
 // Current returns the current event in the log
 func (l *Log) Current() *event.Event {
-	if len(l.Events) == 0 {
+	evt, err := l.db.CurrentEvent(l.prefix)
+	if err != nil {
 		return nil
 	}
 
-	sort.Sort(BySequence(l.Events))
-
-	return l.Events[len(l.Events)-1].Event
+	return evt.Event
 }
 
 func (l *Log) EventAt(sequence int) *event.Message {
-	if sequence > len(l.Events)-1 || sequence < 0 {
+	evt, err := l.db.EventAt(l.prefix, sequence)
+	if err != nil {
 		return nil
 	}
 
-	sort.Sort(BySequence(l.Events))
-	return l.Events[sequence]
+	return evt
 }
 
 // CurrentEstablishment returns the most current establishment event
 // These differ from other events in that they contain key commitments
 // and are used to verify the signatures for all subsequent events
 func (l *Log) CurrentEstablishment() *event.Event {
-	sort.Sort(BySequence(l.Events))
-
-	for i := len(l.Events) - 1; i >= 0; i-- {
-		if l.Events[i].Event.ILK().Establishment() {
-			return l.Events[i].Event
-		}
+	evt, err := l.db.CurrentEstablishmentEvent(l.prefix)
+	if err != nil {
+		return nil
 	}
 
-	return nil
+	return evt.Event
 }
 
 // EstablishmentEvents returns a slice of the establishment event messages
 // in the log, order by serial number
 func (l *Log) EstablishmentEvents() []*event.Event {
-	sort.Sort(BySequence(l.Events))
+	var est []*event.Event
 
-	est := []*event.Event{}
+	err := l.db.StreamEstablisment(l.prefix, func(evt *event.Message) {
+		est = append(est, evt.Event)
+	})
 
-	for i, e := range l.Events {
-		if e.Event.ILK().Establishment() {
-			est = append(est, l.Events[i].Event)
-		}
+	if err != nil {
+		return nil
 	}
 
 	return est
+}
+
+func (l *Log) Size() int {
+	return l.db.LogSize(l.prefix)
 }
 
 // KeyState returns a key state event (kst) that contains the
@@ -119,19 +123,12 @@ func (l *Log) EstablishmentEvents() []*event.Event {
 // a digest seal of the last received events
 func (l *Log) KeyState() (*event.Event, error) {
 	var kst *event.Event
+	var last *event.Event
 
-	evnts := l.EstablishmentEvents()
-
-	if len(evnts) == 0 {
-		// nothing in the log!
-		return nil, nil
-	}
-
-	for i, e := range evnts {
-		// start with the inception event
-		if i == 0 {
-			kst = evnts[i]
-			continue
+	err := l.db.StreamEstablisment(l.prefix, func(msg *event.Message) {
+		e := msg.Event
+		if kst == nil {
+			kst = e
 		}
 
 		// Assumption: these will always be provided in the messages
@@ -168,7 +165,9 @@ func (l *Log) KeyState() (*event.Event, error) {
 			// otherwise if we have an included list of witnesses
 			kst.Witnesses = e.Witnesses
 		}
-	}
+
+		last = e
+	})
 
 	// key state events don't need the sequence number
 	kst.Sequence = ""
@@ -187,7 +186,7 @@ func (l *Log) KeyState() (*event.Event, error) {
 	kst.LastEvent = seal
 
 	// digest the last establishment event
-	seal, err = event.SealEstablishment(evnts[len(evnts)-1])
+	seal, err = event.SealEstablishment(last)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create seal for last establishment event (%s)", err.Error())
 	}
@@ -206,14 +205,24 @@ func (l *Log) KeyState() (*event.Event, error) {
 // add the provided signature. If the event is out of order (in the future)
 // it will escrow it.
 func (l *Log) Apply(e *event.Message) error {
+	if e.Event.Prefix != l.prefix {
+		return errors.New("invalid event for this log")
+	}
+
 	// mark the event as seen
 	e.Seen = time.Now().UTC()
 
-	if len(l.Events) == 0 {
+	if l.db.LogSize(l.prefix) == 0 {
 		if e.Event.EventType != event.ICP.String() {
 			return errors.New("first event in an empty log must be an inception event")
 		}
-		l.Events = append(l.Events, e)
+
+		l.prefix = e.Event.Prefix
+		err := l.db.LogEvent(e)
+		if err != nil {
+			return err
+		}
+		//l.Events = append(l.Events, e)
 		return nil
 	}
 
@@ -233,7 +242,7 @@ func (l *Log) Apply(e *event.Message) error {
 
 	inDerivation, err := derivation.FromPrefix(e.Event.PriorEventDigest)
 	if err != nil {
-		return fmt.Errorf("unable to determin digest derivation (%s)", err)
+		return fmt.Errorf("unable to determine digest derivation (%s)", err)
 	}
 
 	curSerialized, err := current.Serialize()
@@ -253,7 +262,7 @@ func (l *Log) Apply(e *event.Message) error {
 	// if the sig threshold is not met escrow
 	escrowed, err := l.Pending.Get(e.Event)
 	if err != nil {
-		return fmt.Errorf("Unable to retrieve escrowed messages (%s)", err)
+		return fmt.Errorf("unable to retrieve escrowed messages (%s)", err)
 	}
 	sigs := mergeSignatures(escrowed.Signatures, e.Signatures)
 
@@ -266,7 +275,11 @@ func (l *Log) Apply(e *event.Message) error {
 		return nil
 	}
 
-	l.Events = append(l.Events, &event.Message{Event: e.Event, Signatures: sigs})
+	err = l.db.LogEvent(&event.Message{Event: e.Event, Signatures: sigs})
+	if err != nil {
+		return err
+	}
+
 	dups, err := l.Pending.Clear(*e.Event)
 	// we currently do not consider any of these errors that need to be addressed
 	// TODO: handle
@@ -350,8 +363,12 @@ func (l *Log) AddSignatures(e *event.Message) error {
 // Verify the event signatures against the current log
 // establishment event
 func (l *Log) Verify(m *event.Message) error {
+	if m.Event.Prefix != l.prefix {
+		return errors.New("invalid event for this log")
+	}
+
 	var currentEvent *event.Event
-	if len(l.Events) == 0 {
+	if l.db.LogSize(l.prefix) == 0 {
 		if m.Event.EventType != event.ICP.String() {
 			return errors.New("first event in an empty log must be an inception event")
 		}
@@ -381,7 +398,7 @@ func (l *Log) Verify(m *event.Message) error {
 
 		err = derivation.VerifyWithAttachedSignature(keyD, &sig, mRaw)
 		if err != nil {
-			return fmt.Errorf("Invalid signature for key at index %d", sig.KeyIndex)
+			return fmt.Errorf("invalid signature for key at index %d", sig.KeyIndex)
 		}
 	}
 

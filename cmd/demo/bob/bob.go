@@ -3,13 +3,14 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"time"
 
 	"github.com/google/tink/go/aead"
 	"github.com/google/tink/go/keyset"
 
-	"github.com/decentralized-identity/kerigo/pkg/db/mem"
+	kbdgr "github.com/decentralized-identity/kerigo/pkg/db/badger"
 	"github.com/decentralized-identity/kerigo/pkg/direct"
 	"github.com/decentralized-identity/kerigo/pkg/event"
 	"github.com/decentralized-identity/kerigo/pkg/keri"
@@ -34,7 +35,16 @@ func main() {
 	e := flag.Int("e", 60, "Expire time for demo. Default is 60.0.")
 	flag.Parse()
 
-	store := mem.NewMemDB()
+	td, err := ioutil.TempDir("", "keri-bob-*")
+	if err != nil {
+		panic(err)
+	}
+	defer remoteTempDir(td)
+
+	db, err := kbdgr.New(td)
+	if err != nil {
+		panic(err)
+	}
 
 	kh, err := keyset.NewHandle(aead.AES256GCMKeyTemplate())
 	if err != nil {
@@ -46,12 +56,12 @@ func main() {
 		panic(err)
 	}
 
-	km, err = keymanager.NewKeyManager(keymanager.WithAEAD(a), keymanager.WithStore(store), keymanager.WithSecrets(secrets))
+	km, err = keymanager.NewKeyManager(keymanager.WithAEAD(a), keymanager.WithStore(db), keymanager.WithSecrets(secrets))
 	if err != nil {
 		panic(err)
 	}
 
-	kerl, err := keri.New(km)
+	kerl, err := keri.New(km, db)
 	if err != nil {
 		panic(err)
 	}
@@ -102,5 +112,12 @@ func main() {
 	select {
 	case <-time.After(time.Duration(*e) * time.Second):
 		os.Exit(0)
+	}
+}
+
+func remoteTempDir(td string) {
+	err := os.RemoveAll(td)
+	if err != nil {
+		fmt.Println(err)
 	}
 }

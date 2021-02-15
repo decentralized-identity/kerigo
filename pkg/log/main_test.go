@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/decentralized-identity/kerigo/pkg/db/mem"
 	"github.com/decentralized-identity/kerigo/pkg/derivation"
 	"github.com/decentralized-identity/kerigo/pkg/event"
 	"github.com/decentralized-identity/kerigo/pkg/prefix"
@@ -26,7 +27,9 @@ var ixnSig = []byte(`-AABAAqxzoxk4rltuP41tB8wEpHFC4Yd1TzhOGfuhlylbDFAm73jB2emdva
 
 func TestOrder(t *testing.T) {
 	assert := assert.New(t)
-	l := New()
+
+	db := mem.New()
+	l := New("pre", db)
 
 	e := l.Current()
 	assert.Nil(e)
@@ -34,25 +37,28 @@ func TestOrder(t *testing.T) {
 	e = l.Inception()
 	assert.Nil(e)
 
-	icp, err := event.NewEvent(event.WithType(event.ICP))
+	icp, err := event.NewEvent(event.WithPrefix("pre"), event.WithType(event.ICP))
 	assert.Nil(err)
 
-	l.Events = append(l.Events, &event.Message{Event: icp})
-
-	e, err = event.NewEvent(event.WithType(event.ROT), event.WithSequence(1))
+	err = db.LogEvent(&event.Message{Event: icp})
 	assert.Nil(err)
 
-	l.Events = append(l.Events, &event.Message{Event: e})
-
-	e, err = event.NewEvent(event.WithType(event.ROT), event.WithSequence(2))
+	e, err = event.NewEvent(event.WithPrefix("pre"), event.WithType(event.ROT), event.WithSequence(1))
 	assert.Nil(err)
 
-	l.Events = append(l.Events, &event.Message{Event: e})
-
-	latest, err := event.NewEvent(event.WithType(event.ROT), event.WithSequence(3))
+	err = db.LogEvent(&event.Message{Event: e})
 	assert.Nil(err)
 
-	l.Events = append(l.Events, &event.Message{Event: latest})
+	e, err = event.NewEvent(event.WithPrefix("pre"), event.WithType(event.ROT), event.WithSequence(2))
+	assert.Nil(err)
+
+	err = db.LogEvent(&event.Message{Event: e})
+
+	latest, err := event.NewEvent(event.WithPrefix("pre"), event.WithType(event.ROT), event.WithSequence(3))
+	assert.Nil(err)
+
+	err = db.LogEvent(&event.Message{Event: latest})
+	assert.Nil(err)
 
 	e = l.Inception()
 	assert.Same(icp, e)
@@ -63,20 +69,26 @@ func TestOrder(t *testing.T) {
 
 func TestEventAt(t *testing.T) {
 	assert := assert.New(t)
-	l := New()
-	l.Events = []*event.Message{
+	db := mem.New()
+	l := New("pre", db)
+	evts := []*event.Message{
 		{
-			Event: &event.Event{Sequence: fmt.Sprintf("%x", 0)},
+			Event: &event.Event{Prefix: "pre", Sequence: fmt.Sprintf("%x", 0)},
 		},
 		{
-			Event: &event.Event{Sequence: fmt.Sprintf("%x", 1)},
+			Event: &event.Event{Prefix: "pre", Sequence: fmt.Sprintf("%x", 1)},
 		},
 		{
-			Event: &event.Event{Sequence: fmt.Sprintf("%x", 2)},
+			Event: &event.Event{Prefix: "pre", Sequence: fmt.Sprintf("%x", 2)},
 		},
 		{
-			Event: &event.Event{Sequence: fmt.Sprintf("%x", 3)},
+			Event: &event.Event{Prefix: "pre", Sequence: fmt.Sprintf("%x", 3)},
 		},
+	}
+
+	for _, evt := range evts {
+		err := db.LogEvent(evt)
+		assert.NoError(err)
 	}
 
 	evnt := l.EventAt(20)
@@ -104,8 +116,7 @@ func TestEventAt(t *testing.T) {
 
 func TestVerifyAndApply(t *testing.T) {
 	assert := assert.New(t)
-
-	l := New()
+	db := mem.New()
 
 	msg := &event.Message{Event: &event.Event{}}
 	err := json.Unmarshal(incept, msg.Event)
@@ -113,6 +124,7 @@ func TestVerifyAndApply(t *testing.T) {
 		return
 	}
 
+	l := New(msg.Event.Prefix, db)
 	sigs, err := derivation.ParseAttachedSignatures(bytes.NewBuffer(inceptSig))
 	assert.Nil(err)
 	assert.Len(sigs, 1)
@@ -125,7 +137,7 @@ func TestVerifyAndApply(t *testing.T) {
 	// apply the inception event
 	err = l.Apply(msg)
 	assert.Nil(err)
-	assert.Len(l.Events, 1)
+	assert.Equal(l.Size(), 1)
 
 	msg = &event.Message{Event: &event.Event{}}
 	err = json.Unmarshal(rot, msg.Event)
@@ -154,7 +166,7 @@ func TestVerifyAndApply(t *testing.T) {
 	err = l.Apply(msg)
 	assert.Nil(err)
 	assert.Len(l.Pending, 1)
-	assert.Len(l.Events, 1)
+	assert.Equal(l.Size(), 1)
 
 	// invalid digest, should not apply
 	msg.Event.Sequence = "1"
@@ -163,19 +175,20 @@ func TestVerifyAndApply(t *testing.T) {
 	if assert.NotNil(err) {
 		assert.Equal("invalid digest for new event", err.Error())
 	}
-	assert.Len(l.Events, 1)
+	assert.Equal(l.Size(), 1)
 
 	// Correct, should apply
 	msg.Event.PriorEventDigest = "E9ZTKOhr-lqB7jbBMBpUIdMpfWvEswoMoc5UrwCRcTSc"
 	err = l.Apply(msg)
 	assert.Nil(err)
-	assert.Len(l.Events, 2)
+	assert.Equal(l.Size(), 2)
 
 	// apply again, should not change events length
 	err = l.Apply(msg)
 	assert.Nil(err)
-	if assert.Len(l.Events, 2) {
-		assert.Len(l.Events[1].Signatures, 1)
+	if assert.Equal(l.Size(), 2) {
+		evt := l.EventAt(1)
+		assert.Len(evt.Signatures, 1)
 	}
 
 	// Interaction event
@@ -207,6 +220,7 @@ func TestMultiSigApply(t *testing.T) {
 	}
 
 	e, err := event.NewInceptionEvent(
+		event.WithPrefix("pre"),
 		event.WithKeys(prefixes...),
 		event.WithThreshold(3),
 		event.WithDefaultVersion(event.JSON),
@@ -214,9 +228,10 @@ func TestMultiSigApply(t *testing.T) {
 
 	assert.Nil(err)
 
-	l := New()
+	db := mem.New()
+	l := New("pre", db)
 	err = l.Apply(&event.Message{Event: e})
-	if !assert.Nil(err) || !assert.Len(l.Events, 1) {
+	if !assert.Nil(err) || !assert.Equal(l.Size(), 1) {
 		return
 	}
 
@@ -232,6 +247,7 @@ func TestMultiSigApply(t *testing.T) {
 	}
 
 	next, err := event.NewEvent(
+		event.WithPrefix("pre"),
 		event.WithKeys(prefixes...),
 		event.WithType(event.ROT),
 		event.WithSequence(1),
@@ -253,6 +269,7 @@ func TestMultiSigApply(t *testing.T) {
 
 	// create a bad next event
 	badNext, err := event.NewEvent(
+		event.WithPrefix("pre"),
 		event.WithKeys(prefixes...),
 		event.WithType(event.IXN),
 		event.WithSequence(1),
@@ -291,7 +308,7 @@ func TestMultiSigApply(t *testing.T) {
 	// Apply the event again - this should "escrow" but the escrow length should not increase
 	err = l.Apply(&event.Message{Event: next, Signatures: []derivation.Derivation{*sig}})
 	assert.Nil(err)
-	assert.Len(l.Events, 1)
+	assert.Equal(l.Size(), 1)
 	if !assert.Contains(l.Pending, nextDigest) || !assert.Len(l.Pending[nextDigest].Signatures, 1) {
 		return
 	}
@@ -302,7 +319,7 @@ func TestMultiSigApply(t *testing.T) {
 	// 2 of 3 sigs, should escrow
 	err = l.Apply(&event.Message{Event: next, Signatures: []derivation.Derivation{*sig}})
 	assert.Nil(err)
-	assert.Len(l.Events, 1)
+	assert.Equal(l.Size(), 1)
 	if !assert.Contains(l.Pending, nextDigest) || !assert.Len(l.Pending[nextDigest].Signatures, 2) {
 		return
 	}
@@ -313,9 +330,10 @@ func TestMultiSigApply(t *testing.T) {
 	// 3 of 3, should apply
 	err = l.Apply(&event.Message{Event: next, Signatures: []derivation.Derivation{*sig}})
 	assert.Nil(err)
-	assert.Len(l.Events, 2)
+	assert.Equal(l.Size(), 2)
 	assert.Empty(l.Pending)
-	assert.Len(l.Events[1].Signatures, 3)
+	evt := l.EventAt(1)
+	assert.Len(evt.Signatures, 3)
 
 	// add a 4th signature = this should simply tack on to our existing sig list in the log
 	sig.KeyIndex = 3
@@ -323,14 +341,15 @@ func TestMultiSigApply(t *testing.T) {
 	// 4 of 3, should apply
 	err = l.Apply(&event.Message{Event: next, Signatures: []derivation.Derivation{*sig}})
 	assert.Nil(err)
-	assert.Len(l.Events, 2)
+	assert.Equal(l.Size(), 2)
 	assert.Empty(l.Pending)
-	assert.Len(l.Events[1].Signatures, 4)
+	evt = l.EventAt(1)
+	assert.Len(evt.Signatures, 4)
 
 	// send through our bad event
 	err = l.Apply(&event.Message{Event: badNext, Signatures: []derivation.Derivation{*sig}})
 	assert.NotNil(err)
-	assert.Len(l.Events, 2)
+	assert.Equal(l.Size(), 2)
 	assert.Empty(l.Pending)
 	assert.Contains(l.Duplicitous, badNextDigest)
 }
@@ -349,6 +368,7 @@ func TestEscrowApply(t *testing.T) {
 	}
 
 	e, err := event.NewInceptionEvent(
+		event.WithPrefix("pre"),
 		event.WithKeys(prefixes...),
 		event.WithThreshold(2),
 		event.WithDefaultVersion(event.JSON),
@@ -356,9 +376,10 @@ func TestEscrowApply(t *testing.T) {
 
 	assert.Nil(err)
 
-	l := New()
+	db := mem.New()
+	l := New("pre", db)
 	err = l.Apply(&event.Message{Event: e})
-	if !assert.Nil(err) || !assert.Len(l.Events, 1) {
+	if !assert.Nil(err) || !assert.Equal(l.Size(), 1) {
 		return
 	}
 
@@ -374,6 +395,7 @@ func TestEscrowApply(t *testing.T) {
 	}
 
 	next, err := event.NewEvent(
+		event.WithPrefix("pre"),
 		event.WithKeys(prefixes...),
 		event.WithType(event.ROT),
 		event.WithSequence(1),
@@ -395,6 +417,7 @@ func TestEscrowApply(t *testing.T) {
 
 	// create a valid event for after next.
 	nextNext, err := event.NewEvent(
+		event.WithPrefix("pre"),
 		event.WithKeys(prefixes...),
 		event.WithType(event.ROT),
 		event.WithSequence(2),
@@ -406,6 +429,7 @@ func TestEscrowApply(t *testing.T) {
 
 	// create a duplicitous nextNext event
 	dupNextNext, err := event.NewEvent(
+		event.WithPrefix("pre"),
 		event.WithKeys(prefixes[0]),
 		event.WithType(event.ROT),
 		event.WithSequence(2),
@@ -427,19 +451,19 @@ func TestEscrowApply(t *testing.T) {
 	err = l.Apply(&event.Message{Event: nextNext, Signatures: []derivation.Derivation{*sig}})
 	assert.Nil(err)
 	assert.Len(l.Pending, 1)
-	assert.Len(l.Events, 1)
+	assert.Equal(l.Size(), 1)
 
 	// apply dupNextNext - it will be out of order, so should also escrow under pending.
 	err = l.Apply(&event.Message{Event: dupNextNext, Signatures: []derivation.Derivation{*sig}})
 	assert.Nil(err)
 	assert.Len(l.Pending, 2)
-	assert.Len(l.Events, 1)
+	assert.Equal(l.Size(), 1)
 
 	// apply Next with only one sig. This should escrow to pending
 	err = l.Apply(&event.Message{Event: next, Signatures: []derivation.Derivation{*sig}})
 	assert.Nil(err)
 	assert.Len(l.Pending, 3)
-	assert.Len(l.Events, 1)
+	assert.Equal(l.Size(), 1)
 
 	// apply next with another sig, this will apply it
 	// this should also apply the pending nextNext event since
@@ -451,8 +475,9 @@ func TestEscrowApply(t *testing.T) {
 	err = l.Apply(&event.Message{Event: next, Signatures: []derivation.Derivation{*sig}})
 	assert.Nil(err)
 	assert.Len(l.Pending, 0)
-	if assert.Len(l.Events, 3) {
-		assert.Equal(nextNext, l.Events[2].Event)
+	if assert.Equal(l.Size(), 3) {
+		evt := l.EventAt(2)
+		assert.Equal(nextNext, evt.Event)
 	}
 	if assert.Len(l.Duplicitous, 1) {
 		m, err := l.Duplicitous.Get(dupNextNext)
@@ -527,7 +552,8 @@ func TestReceipts(t *testing.T) {
 		Event: icp,
 	}
 
-	kel := New()
+	db := mem.New()
+	kel := New(icp.Prefix, db)
 	err = kel.Apply(msg)
 
 	assert.NoError(t, err)
@@ -545,58 +571,70 @@ func TestReceipts(t *testing.T) {
 func TestKeyState(t *testing.T) {
 	assert := assert.New(t)
 
-	l := Log{
-		Events: []*event.Message{
-			{Event: &event.Event{
-				Version:   event.DefaultVersionString(event.JSON),
-				EventType: "icp",
-				Sequence:  "0",
-				Keys:      []string{"k1.1", "k1.2", "k1.3"},
-				Next:      "next1",
-				Witnesses: []string{"w1"},
-			}},
-			{Event: &event.Event{
-				Version:    event.DefaultVersionString(event.JSON),
-				EventType:  "rot",
-				Sequence:   "1",
-				Keys:       []string{"k2.1", "k2.2", "k2.3"},
-				Next:       "next2",
-				AddWitness: []string{"w2", "w3", "w4"},
-			}},
-			{Event: &event.Event{
-				Version:   event.DefaultVersionString(event.JSON),
-				EventType: "rot",
-				Sequence:  "2",
-				Keys:      []string{"k2.1", "k2.2", "k2.3"},
-				Next:      "next2",
-			}},
+	evts := []*event.Message{
+		{Event: &event.Event{
+			Prefix:    "pre",
+			Version:   event.DefaultVersionString(event.JSON),
+			EventType: "icp",
+			Sequence:  "0",
+			Keys:      []string{"k1.1", "k1.2", "k1.3"},
+			Next:      "next1",
+			Witnesses: []string{"w1"},
+		}},
+		{Event: &event.Event{
+			Prefix:     "pre",
+			Version:    event.DefaultVersionString(event.JSON),
+			EventType:  "rot",
+			Sequence:   "1",
+			Keys:       []string{"k2.1", "k2.2", "k2.3"},
+			Next:       "next2",
+			AddWitness: []string{"w2", "w3", "w4"},
+		}},
+		{Event: &event.Event{
+			Prefix:    "pre",
+			Version:   event.DefaultVersionString(event.JSON),
+			EventType: "rot",
+			Sequence:  "2",
+			Keys:      []string{"k2.1", "k2.2", "k2.3"},
+			Next:      "next2",
+		}},
 
-			{Event: &event.Event{
-				Version:   event.DefaultVersionString(event.JSON),
-				EventType: "ixn",
-				Sequence:  "3",
-				Keys:      []string{"k2.1", "k2.2", "k2.3"},
-				Next:      "next2",
-			}},
+		{Event: &event.Event{
+			Prefix:    "pre",
+			Version:   event.DefaultVersionString(event.JSON),
+			EventType: "ixn",
+			Sequence:  "3",
+			Keys:      []string{"k2.1", "k2.2", "k2.3"},
+			Next:      "next2",
+		}},
 
-			{Event: &event.Event{
-				Version:       event.DefaultVersionString(event.JSON),
-				EventType:     "rot",
-				Sequence:      "4",
-				Keys:          []string{"k3.1"},
-				Next:          "next3",
-				RemoveWitness: []string{"w3"},
-				AddWitness:    []string{"w42"},
-			}},
+		{Event: &event.Event{
+			Prefix:        "pre",
+			Version:       event.DefaultVersionString(event.JSON),
+			EventType:     "rot",
+			Sequence:      "4",
+			Keys:          []string{"k3.1"},
+			Next:          "next3",
+			RemoveWitness: []string{"w3"},
+			AddWitness:    []string{"w42"},
+		}},
 
-			{Event: &event.Event{
-				Version:   event.DefaultVersionString(event.JSON),
-				EventType: "ixn",
-				Sequence:  "5",
-				Keys:      []string{"k2.1", "k2.2", "k2.3"},
-				Next:      "next2",
-			}},
-		},
+		{Event: &event.Event{
+			Prefix:    "pre",
+			Version:   event.DefaultVersionString(event.JSON),
+			EventType: "ixn",
+			Sequence:  "5",
+			Keys:      []string{"k2.1", "k2.2", "k2.3"},
+			Next:      "next2",
+		}},
+	}
+
+	db := mem.New()
+	l := New("pre", db)
+
+	for _, evt := range evts {
+		err := db.LogEvent(evt)
+		assert.NoError(err)
 	}
 
 	est := l.EstablishmentEvents()
@@ -610,12 +648,12 @@ func TestKeyState(t *testing.T) {
 	assert.Equal([]string{"w1", "w2", "w4", "w42"}, ks.Witnesses)
 	if assert.NotNil(ks.LastEstablishment) {
 		assert.Equal("4", ks.LastEstablishment.Sequence)
-		assert.Equal("E7XVOGJzd708dfstENmKLesFIhx-d2nZWvR-5sRWgn-w", ks.LastEstablishment.Digest)
+		assert.Equal("EtIfYUO5H0zRUkzMfi1DHTMUWh0fIrLuEuaDHZc7jz2k", ks.LastEstablishment.Digest)
 	}
 
 	if assert.NotNil(ks.LastEvent) {
 		assert.Equal("5", ks.LastEvent.Sequence)
-		assert.Equal("EUNnj97OtQWJNZEcA1S1Ueh2oiUPUu77fBekoI4iR_yw", ks.LastEvent.Digest)
+		assert.Equal("E-8IKj55f68V-ryKv9fuxu8WaLOUVux8uX_yD6NiQYlE", ks.LastEvent.Digest)
 		assert.Equal("ixn", ks.LastEvent.EventType)
 	}
 

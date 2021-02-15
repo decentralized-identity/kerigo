@@ -3,11 +3,13 @@ package keri
 import (
 	"crypto/ed25519"
 	"encoding/json"
+	"fmt"
 	"log"
 	"time"
 
 	"github.com/pkg/errors"
 
+	"github.com/decentralized-identity/kerigo/pkg/db"
 	"github.com/decentralized-identity/kerigo/pkg/derivation"
 	"github.com/decentralized-identity/kerigo/pkg/event"
 	"github.com/decentralized-identity/kerigo/pkg/keymanager"
@@ -21,22 +23,16 @@ type Option func(*Keri) error
 type Keri struct {
 	pre   string
 	kms   *keymanager.KeyManager
-	reg   *Registry
+	db    db.DB
 	rcpts *Receipts
 }
 
-func New(kms *keymanager.KeyManager, opts ...Option) (*Keri, error) {
+func New(kms *keymanager.KeyManager, db db.DB, opts ...Option) (*Keri, error) {
 	k := &Keri{
+		db:    db,
 		kms:   kms,
 		rcpts: &Receipts{},
 	}
-
-	reg, err := NewRegistry()
-	if err != nil {
-		return nil, errors.Wrap(err, "unable to create Keri registry")
-	}
-
-	k.reg = reg
 
 	for _, o := range opts {
 		err := o(k)
@@ -71,8 +67,7 @@ func New(kms *keymanager.KeyManager, opts ...Option) (*Keri, error) {
 }
 
 func (r *Keri) KEL() *klog.Log {
-	l, _ := r.reg.KEL(r.pre)
-	return l
+	return klog.New(r.pre, r.db)
 }
 
 func (r *Keri) ProcessEvents(msgs ...*event.Message) ([]*event.Message, error) {
@@ -81,7 +76,7 @@ func (r *Keri) ProcessEvents(msgs ...*event.Message) ([]*event.Message, error) {
 	for _, msg := range msgs {
 		switch msg.Event.ILK() {
 		case event.ICP, event.ROT, event.DIP, event.IXN, event.DRT:
-			err := r.reg.ProcessEvent(msg)
+			err := r.ProcessEvent(msg)
 			if err != nil {
 				return nil, err
 			}
@@ -116,33 +111,24 @@ func (r *Keri) Sign(data []byte) ([]byte, error) {
 }
 
 func (r *Keri) Inception() (*event.Message, error) {
-	kel, _ := r.reg.KEL(r.pre)
-	icp := kel.Inception()
-
-	sig, err := r.sign(icp)
+	icp, err := r.db.Inception(r.pre)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "unexpected error getting own inception")
 	}
 
-	msg := &event.Message{
-		Event:      icp,
-		Signatures: []derivation.Derivation{*sig},
-	}
-
-	return msg, nil
+	return icp, nil
 }
 
 func (r *Keri) Rotate() (*event.Message, error) {
 	err := r.kms.Rotate()
 
-	kel, err := r.reg.KEL(r.pre)
+	cur, err := r.db.CurrentEvent(r.pre)
 	if err != nil {
 		return nil, errors.Wrap(err, "unexpected error getting my KEL")
 	}
 
-	cur := kel.Current()
-	dig, err := cur.GetDigest()
-	sn := cur.SequenceInt() + 1
+	dig, err := cur.Event.GetDigest()
+	sn := cur.Event.SequenceInt() + 1
 
 	keyDer, err := derivation.New(derivation.WithCode(derivation.Ed25519), derivation.WithRaw(r.kms.PublicKey()))
 	if err != nil {
@@ -153,7 +139,7 @@ func (r *Keri) Rotate() (*event.Message, error) {
 	nextKeyPre := prefix.New(r.kms.Next())
 
 	rot, err := event.NewRotationEvent(
-		event.WithPrefix(cur.Prefix),
+		event.WithPrefix(cur.Event.Prefix),
 		event.WithDigest(dig),
 		event.WithKeys(keyPre),
 		event.WithDefaultVersion(event.JSON),
@@ -175,7 +161,7 @@ func (r *Keri) Rotate() (*event.Message, error) {
 		Signatures: []derivation.Derivation{*sig},
 	}
 
-	err = r.reg.ProcessEvent(msg)
+	err = r.ProcessEvent(msg)
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to process my own rotation event")
 	}
@@ -184,17 +170,16 @@ func (r *Keri) Rotate() (*event.Message, error) {
 }
 
 func (r *Keri) Interaction(payload event.SealArray) (*event.Message, error) {
-	kel, err := r.reg.KEL(r.pre)
+	cur, err := r.db.CurrentEvent(r.pre)
 	if err != nil {
 		return nil, errors.Wrap(err, "unexpected error getting my KEL")
 	}
 
-	cur := kel.Current()
-	dig, err := cur.GetDigest()
-	sn := cur.SequenceInt() + 1
+	dig, err := cur.Event.GetDigest()
+	sn := cur.Event.SequenceInt() + 1
 
 	ixn, err := event.NewInteractionEvent(
-		event.WithPrefix(cur.Prefix),
+		event.WithPrefix(cur.Event.Prefix),
 		event.WithDigest(dig),
 		event.WithDefaultVersion(event.JSON),
 		event.WithSequence(sn),
@@ -214,7 +199,7 @@ func (r *Keri) Interaction(payload event.SealArray) (*event.Message, error) {
 		Signatures: []derivation.Derivation{*sig},
 	}
 
-	err = r.reg.ProcessEvent(msg)
+	err = r.ProcessEvent(msg)
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to process my own ixn event")
 	}
@@ -224,12 +209,11 @@ func (r *Keri) Interaction(payload event.SealArray) (*event.Message, error) {
 }
 
 func (r *Keri) FindConnection(prefix string) (*klog.Log, error) {
-	l, err := r.reg.KEL(prefix)
-	if err != nil {
-		return nil, err
+	if !r.db.Seen(prefix) {
+		return nil, errors.New("not found")
 	}
 
-	return l, nil
+	return klog.New(prefix, r.db), nil
 }
 
 func (r *Keri) WaitForReceipt(evt *event.Event, timeout time.Duration) (chan *event.Event, chan error) {
@@ -266,13 +250,12 @@ func (r *Keri) WaitForReceipt(evt *event.Event, timeout time.Duration) (chan *ev
 }
 
 func (r *Keri) generateReceipt(evt *event.Event) (*event.Message, error) {
-	kel, err := r.reg.KEL(r.pre)
+	latestEst, err := r.db.CurrentEstablishmentEvent(r.pre)
 	if err != nil {
 		return nil, errors.Wrap(err, "unexpected error getting current KEL")
 	}
 
-	latestEst := kel.CurrentEstablishment()
-	rec, err := event.TransferableReceipt(evt, latestEst, derivation.Blake3256)
+	rec, err := event.TransferableReceipt(evt, latestEst.Event, derivation.Blake3256)
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to generate receipt:")
 	}
@@ -320,12 +303,47 @@ func (r *Keri) sign(evt *event.Event) (*derivation.Derivation, error) {
 	return sig, nil
 }
 
+func (r *Keri) ProcessEvent(msg *event.Message) error {
+
+	evt := msg.Event
+	ilk := evt.ILK()
+
+	var kel *klog.Log
+	kel = klog.New(evt.Prefix, r.db)
+
+	if !r.db.Seen(evt.Prefix) {
+		if ilk != event.ICP && ilk != event.DIP {
+			//TODO: Handle out-of-order events
+			return errors.New("out of order events not currently handled")
+		}
+
+	} else {
+		if ilk == event.ICP || ilk == event.DIP {
+			//TODO: Handle duplicitious events
+			return errors.New("duplicitious events not currently handled")
+		}
+	}
+
+	err := kel.Verify(msg)
+	if err != nil {
+		return fmt.Errorf("unable to verify message: (%v)", err)
+	}
+
+	err = kel.Apply(msg)
+	if err != nil {
+		return fmt.Errorf("unable to apply message: (%v)", err)
+	}
+
+	return nil
+}
+
 func (r *Keri) ProcessReceipt(vrc *event.Message) error {
 	seal := vrc.Event.Seals[0]
-	kel, err := r.reg.KEL(vrc.Event.Prefix)
-	if err != nil {
+	if !r.db.Seen(vrc.Event.Prefix) {
 		return errors.New("unexpected error, received a receipt for an unknown prefix")
 	}
+
+	kel := klog.New(vrc.Event.Prefix, r.db)
 
 	evt := kel.EventAt(vrc.Event.SequenceInt())
 	if evt == nil {
@@ -333,11 +351,12 @@ func (r *Keri) ProcessReceipt(vrc *event.Message) error {
 		return errors.New("unverified transferable receipt")
 	}
 
-	receiptorKEL, err := r.reg.KEL(seal.Prefix)
-	if err != nil {
+	if !r.db.Seen(seal.Prefix) {
 		//TODO: Haven't seen the receipter kel yet, add to vrc escrow
 		return errors.New("unverified transferable receipt")
 	}
+
+	receiptorKEL := klog.New(seal.Prefix, r.db)
 
 	estEvt := receiptorKEL.EventAt(seal.SequenceInt())
 	if estEvt == nil {

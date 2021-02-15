@@ -37,7 +37,7 @@ func NewKeyManager(opts ...Option) (*KeyManager, error) {
 
 	km := &KeyManager{
 		secrets: []string{},
-		store:   mem.NewMemDB(),
+		store:   mem.New(),
 		kw:      &dummyAEAD{},
 	}
 
