@@ -54,6 +54,13 @@ var (
 		ICP: {"v", "s", "t", "kt", "k", "n", "wt", "c"},
 		DIP: {"v", "s", "t", "kt", "k", "n", "wt", "c"},
 	}
+
+	estIlks = map[ILK]bool{
+		ICP: true,
+		ROT: true,
+		DIP: true,
+		DRT: true,
+	}
 )
 
 func (i ILK) String() string {
@@ -107,7 +114,7 @@ type Event struct {
 	Witnesses         []string       `json:"w,omitempty"`
 	AddWitness        []string       `json:"wa,omitempty"`
 	RemoveWitness     []string       `json:"wr,omitempty"`
-	Config            []prefix.Trait `json:"c,omitempty"`
+	Config            []prefix.Trait `json:"c,omitempty" cbor:",omitempty"`
 	Seals             SealArray      `json:"a,omitempty"`
 	DelegatorSeal     *Seal          `json:"da,omitempty"`
 	LastEvent         *Seal          `json:"e,omitempty"`
@@ -117,6 +124,10 @@ type Event struct {
 // ILK returns the ILK iota value for the event
 func (e *Event) ILK() ILK {
 	return ilkValue[e.EventType]
+}
+
+func (e *Event) IsEstablishment() bool {
+	return estIlks[e.ILK()]
 }
 
 // MarshalJSON interface implementation.

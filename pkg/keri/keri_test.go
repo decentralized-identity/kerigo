@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/decentralized-identity/kerigo/pkg/db/mem"
 	"github.com/decentralized-identity/kerigo/pkg/event"
 	testkms "github.com/decentralized-identity/kerigo/pkg/test/kms"
 )
@@ -15,7 +16,7 @@ func TestInception(t *testing.T) {
 	secrets := []string{"ADW3o9m3udwEf0aoOdZLLJdf1aylokP0lwwI_M2J9h0s", "AagumsL8FeGES7tYcnr_5oN6qcwJzZfLKxoniKUpG4qc"}
 	kms := testkms.GetKMS(t, secrets)
 
-	k, err := New(kms)
+	k, err := New(kms, mem.New())
 	assert.NoError(t, err)
 
 	icp, err := k.Inception()
@@ -31,7 +32,7 @@ func TestSign(t *testing.T) {
 	secrets := []string{"ADW3o9m3udwEf0aoOdZLLJdf1aylokP0lwwI_M2J9h0s", "AagumsL8FeGES7tYcnr_5oN6qcwJzZfLKxoniKUpG4qc"}
 	kms := testkms.GetKMS(t, secrets)
 
-	k, err := New(kms)
+	k, err := New(kms, mem.New())
 	assert.NoError(t, err)
 
 	sig, err := k.Sign([]byte("this is test data"))
@@ -47,11 +48,11 @@ func TestDirectMode(t *testing.T) {
 	t.Run("no wait", func(t *testing.T) {
 
 		eveKms := testkms.GetKMS(t, eveSecrets)
-		eve, err := New(eveKms)
+		eve, err := New(eveKms, mem.New())
 		assert.NoError(t, err)
 
 		bobKms := testkms.GetKMS(t, bobSecrets)
-		bob, err := New(bobKms)
+		bob, err := New(bobKms, mem.New())
 		assert.NoError(t, err)
 
 		icp, err := bob.Inception()
@@ -90,11 +91,11 @@ func TestDirectMode(t *testing.T) {
 	t.Run("wait", func(t *testing.T) {
 
 		eveKms := testkms.GetKMS(t, eveSecrets)
-		eve, err := New(eveKms)
+		eve, err := New(eveKms, mem.New())
 		assert.NoError(t, err)
 
 		bobKms := testkms.GetKMS(t, bobSecrets)
-		bob, err := New(bobKms)
+		bob, err := New(bobKms, mem.New())
 		assert.NoError(t, err)
 
 		icp, err := bob.Inception()
@@ -144,7 +145,7 @@ func TestInteractionEvent(t *testing.T) {
 	secrets := []string{"ADW3o9m3udwEf0aoOdZLLJdf1aylokP0lwwI_M2J9h0s", "AagumsL8FeGES7tYcnr_5oN6qcwJzZfLKxoniKUpG4qc"}
 	kms := testkms.GetKMS(t, secrets)
 
-	k, err := New(kms)
+	k, err := New(kms, mem.New())
 	assert.NoError(t, err)
 
 	ixn, err := k.Interaction([]*event.Seal{})
@@ -164,11 +165,11 @@ func TestFindConnection(t *testing.T) {
 	t.Run("no wait", func(t *testing.T) {
 
 		eveKms := testkms.GetKMS(t, eveSecrets)
-		eve, err := New(eveKms)
+		eve, err := New(eveKms, mem.New())
 		assert.NoError(t, err)
 
 		bobKms := testkms.GetKMS(t, bobSecrets)
-		bob, err := New(bobKms)
+		bob, err := New(bobKms, mem.New())
 		assert.NoError(t, err)
 
 		icp, err := bob.Inception()
@@ -181,13 +182,12 @@ func TestFindConnection(t *testing.T) {
 		l, err := eve.FindConnection(icp.Event.Prefix)
 		assert.NoError(t, err)
 		assert.NotNil(t, l, 1)
-		assert.Len(t, l.Events, 1)
 	})
 
 	t.Run("not found", func(t *testing.T) {
 		kms := testkms.GetKMS(t, secrets)
 
-		k, err := New(kms)
+		k, err := New(kms, mem.New())
 		assert.NoError(t, err)
 
 		l, err := k.FindConnection("bad prefix")

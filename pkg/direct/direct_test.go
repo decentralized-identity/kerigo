@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/decentralized-identity/kerigo/pkg/db/mem"
 	"github.com/decentralized-identity/kerigo/pkg/event"
 	"github.com/decentralized-identity/kerigo/pkg/keri"
 	"github.com/decentralized-identity/kerigo/pkg/test/kms"
@@ -22,7 +23,7 @@ func TestDial(t *testing.T) {
 
 	bobKMS := kms.GetKMS(t, bobSecrets)
 
-	bobID, err := keri.New(bobKMS)
+	bobID, err := keri.New(bobKMS, mem.New())
 	assert.NoError(t, err)
 
 	cli, err := Dial(bobID, addr)
@@ -40,7 +41,7 @@ func TestSingleMessage(t *testing.T) {
 
 	eveKMS := kms.GetKMS(t, eveSecrets)
 
-	eveID, err := keri.New(eveKMS)
+	eveID, err := keri.New(eveKMS, mem.New())
 	assert.NoError(t, err)
 
 	srv := &Server{
@@ -62,7 +63,7 @@ func TestSingleMessage(t *testing.T) {
 
 	bobKMS := kms.GetKMS(t, bobSecrets)
 
-	bobID, err := keri.New(bobKMS)
+	bobID, err := keri.New(bobKMS, mem.New())
 	assert.NoError(t, err)
 
 	cli, err := DialTimeout(bobID, addr, 5*time.Second)
@@ -100,7 +101,7 @@ func TestWithNotify(t *testing.T) {
 
 	eveKMS := kms.GetKMS(t, eveSecrets)
 
-	eveID, err := keri.New(eveKMS)
+	eveID, err := keri.New(eveKMS, mem.New())
 	assert.NoError(t, err)
 
 	srv := &Server{
@@ -122,7 +123,7 @@ func TestWithNotify(t *testing.T) {
 
 	bobKMS := kms.GetKMS(t, bobSecrets)
 
-	bobID, err := keri.New(bobKMS)
+	bobID, err := keri.New(bobKMS, mem.New())
 	assert.NoError(t, err)
 
 	cli, err := DialTimeout(bobID, addr, 5*time.Second)

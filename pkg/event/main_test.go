@@ -9,7 +9,6 @@ import (
 
 	"github.com/decentralized-identity/kerigo/pkg/derivation"
 	"github.com/decentralized-identity/kerigo/pkg/prefix"
-	testkms "github.com/decentralized-identity/kerigo/pkg/test/kms"
 )
 
 func TestNewInceptionEvent(t *testing.T) {
@@ -77,15 +76,17 @@ func TestGetDigest(t *testing.T) {
 func TestRotationEvent(t *testing.T) {
 	t.Run("happy", func(t *testing.T) {
 		expectedRotBytes := `{"v":"KERI10JSON0000ba_","i":"Efxqin4pHh--KbxFN7xcOnOakf2CAK19zknumybXxabI","s":"0","t":"rot","kt":"1","n":"EOF414QEuea9A-Svo-tzipeVfk0-DvtAsaLULWCnHXw4","wt":"0","wr":[],"wa":[],"a":[]}`
-		secrets := []string{"ADW3o9m3udwEf0aoOdZLLJdf1aylokP0lwwI_M2J9h0s", "AagumsL8FeGES7tYcnr_5oN6qcwJzZfLKxoniKUpG4qc", "Ap5waegfnuP6ezC18w7jQiPyQwYYsp9Yv9rYMlKAYL8k"}
-		kms := testkms.GetKMS(t, secrets)
 
 		icp := incept(t, "ADW3o9m3udwEf0aoOdZLLJdf1aylokP0lwwI_M2J9h0s", "AagumsL8FeGES7tYcnr_5oN6qcwJzZfLKxoniKUpG4qc")
 
-		err := kms.Rotate()
+		der, err := derivation.FromPrefix("Ap5waegfnuP6ezC18w7jQiPyQwYYsp9Yv9rYMlKAYL8k")
 		assert.NoError(t, err)
 
-		nextPre := prefix.New(kms.Next())
+		edPriv := ed25519.NewKeyFromSeed(der.Raw)
+		edPub := edPriv.Public()
+		keyDer, err := derivation.New(derivation.WithCode(derivation.Ed25519), derivation.WithRaw(edPub.(ed25519.PublicKey)))
+		assert.NoError(t, err)
+		nextPre := prefix.New(keyDer)
 
 		evt, err := NewRotationEvent(WithPrefix(icp.Prefix), WithNext("1", derivation.Blake3256, nextPre))
 		assert.NoError(t, err)

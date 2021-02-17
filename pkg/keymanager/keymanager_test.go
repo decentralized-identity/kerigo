@@ -174,7 +174,7 @@ func TestDB(t *testing.T) {
 		a, err := aead.New(kh)
 		assert.NoError(t, err)
 
-		db := mem.NewMemDB()
+		db := mem.New()
 
 		km1, err := NewKeyManager(WithAEAD(a), WithStore(db))
 		assert.NoError(t, err)

@@ -1,7 +1,9 @@
-package mem
+package badger
 
 import (
 	"fmt"
+	"io/ioutil"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -13,18 +15,26 @@ import (
 func TestPut(t *testing.T) {
 
 	t.Run("empty get", func(t *testing.T) {
-		db := New()
+		td, cleanup := getTempDir(t)
+		defer cleanup()
+
+		db, err := New(td)
+		assert.NoError(t, err)
 
 		v, err := db.Get("test")
 		assert.Empty(t, v)
 		assert.NotNil(t, err)
-		assert.Equal(t, "not found", err.Error())
+		assert.Equal(t, "error getting from badger: Key not found", err.Error())
 	})
 
 	t.Run("put and get", func(t *testing.T) {
+		td, cleanup := getTempDir(t)
+		defer cleanup()
 
-		db := New()
-		err := db.Put("test", []byte("value"))
+		db, err := New(td)
+		assert.NoError(t, err)
+
+		err = db.Put("test", []byte("value"))
 
 		v, err := db.Get("test")
 
@@ -34,7 +44,11 @@ func TestPut(t *testing.T) {
 }
 
 func TestLogEvent(t *testing.T) {
-	db := New()
+	td, cleanup := getTempDir(t)
+	defer cleanup()
+
+	db, err := New(td)
+	assert.NoError(t, err)
 
 	evt := &event.Event{
 		Prefix:    "pre",
@@ -47,7 +61,7 @@ func TestLogEvent(t *testing.T) {
 	}
 
 	msg := &event.Message{Event: evt}
-	err := db.LogEvent(msg)
+	err = db.LogEvent(msg)
 	assert.NoError(t, err)
 
 	assert.Equal(t, db.LogSize("pre"), 1)
@@ -57,7 +71,12 @@ func TestLogEvent(t *testing.T) {
 }
 
 func TestLogSize(t *testing.T) {
-	db := New()
+	td, cleanup := getTempDir(t)
+	defer cleanup()
+
+	db, err := New(td)
+	assert.NoError(t, err)
+	assert.NotNil(t, db)
 
 	evt := &event.Event{
 		Prefix:    "pre",
@@ -69,7 +88,7 @@ func TestLogSize(t *testing.T) {
 		Witnesses: []string{"w1"},
 	}
 
-	err := db.LogEvent(&event.Message{Event: evt})
+	err = db.LogEvent(&event.Message{Event: evt})
 	assert.NoError(t, err)
 
 	assert.Equal(t, db.LogSize("pre"), 1)
@@ -97,7 +116,12 @@ func TestLogSize(t *testing.T) {
 }
 
 func TestStreamLog(t *testing.T) {
-	db := New()
+	td, cleanup := getTempDir(t)
+	defer cleanup()
+
+	db, err := New(td)
+	assert.NoError(t, err)
+	assert.NotNil(t, db)
 
 	evt := &event.Event{
 		Prefix:    "pre",
@@ -109,7 +133,7 @@ func TestStreamLog(t *testing.T) {
 		Witnesses: []string{"w1"},
 	}
 
-	err := db.LogEvent(&event.Message{Event: evt})
+	err = db.LogEvent(&event.Message{Event: evt})
 	assert.NoError(t, err)
 
 	assert.Equal(t, db.LogSize("pre"), 1)
@@ -142,7 +166,12 @@ func TestStreamLog(t *testing.T) {
 }
 
 func TestStreamEstablisment(t *testing.T) {
-	db := New()
+	td, cleanup := getTempDir(t)
+	defer cleanup()
+
+	db, err := New(td)
+	assert.NoError(t, err)
+	assert.NotNil(t, db)
 
 	evt := &event.Event{
 		Prefix:    "pre",
@@ -154,7 +183,7 @@ func TestStreamEstablisment(t *testing.T) {
 		Witnesses: []string{"w1"},
 	}
 
-	err := db.LogEvent(&event.Message{Event: evt})
+	err = db.LogEvent(&event.Message{Event: evt})
 	assert.NoError(t, err)
 
 	assert.Equal(t, db.LogSize("pre"), 1)
@@ -200,7 +229,12 @@ func TestStreamEstablisment(t *testing.T) {
 }
 
 func TestSeen(t *testing.T) {
-	db := New()
+	td, cleanup := getTempDir(t)
+	defer cleanup()
+
+	db, err := New(td)
+	assert.NoError(t, err)
+	assert.NotNil(t, db)
 
 	evt := &event.Event{
 		Prefix:    "pre",
@@ -212,7 +246,7 @@ func TestSeen(t *testing.T) {
 		Witnesses: []string{"w1"},
 	}
 
-	err := db.LogEvent(&event.Message{Event: evt})
+	err = db.LogEvent(&event.Message{Event: evt})
 	assert.NoError(t, err)
 
 	ok := db.Seen("pre")
@@ -223,7 +257,12 @@ func TestSeen(t *testing.T) {
 }
 
 func TestInception(t *testing.T) {
-	db := New()
+	td, cleanup := getTempDir(t)
+	defer cleanup()
+
+	db, err := New(td)
+	assert.NoError(t, err)
+	assert.NotNil(t, db)
 
 	orig := &event.Event{
 		Prefix:    "pre",
@@ -235,7 +274,7 @@ func TestInception(t *testing.T) {
 		Witnesses: []string{"w1"},
 	}
 
-	err := db.LogEvent(&event.Message{Event: orig})
+	err = db.LogEvent(&event.Message{Event: orig})
 	assert.NoError(t, err)
 
 	assert.Equal(t, db.LogSize("pre"), 1)
@@ -267,7 +306,12 @@ func TestInception(t *testing.T) {
 }
 
 func TestCurrentEvent(t *testing.T) {
-	db := New()
+	td, cleanup := getTempDir(t)
+	defer cleanup()
+
+	db, err := New(td)
+	assert.NoError(t, err)
+	assert.NotNil(t, db)
 
 	orig := &event.Event{
 		Prefix:    "pre",
@@ -279,7 +323,7 @@ func TestCurrentEvent(t *testing.T) {
 		Witnesses: []string{"w1"},
 	}
 
-	err := db.LogEvent(&event.Message{Event: orig})
+	err = db.LogEvent(&event.Message{Event: orig})
 	assert.NoError(t, err)
 
 	assert.Equal(t, db.LogSize("pre"), 1)
@@ -311,7 +355,12 @@ func TestCurrentEvent(t *testing.T) {
 }
 
 func TestCurrentEstablishmentEvent(t *testing.T) {
-	db := New()
+	td, cleanup := getTempDir(t)
+	defer cleanup()
+
+	db, err := New(td)
+	assert.NoError(t, err)
+	assert.NotNil(t, db)
 
 	orig := &event.Event{
 		Prefix:    "pre",
@@ -323,7 +372,7 @@ func TestCurrentEstablishmentEvent(t *testing.T) {
 		Witnesses: []string{"w1"},
 	}
 
-	err := db.LogEvent(&event.Message{Event: orig})
+	err = db.LogEvent(&event.Message{Event: orig})
 	assert.NoError(t, err)
 	assert.Equal(t, db.LogSize("pre"), 1)
 
@@ -355,7 +404,12 @@ func TestCurrentEstablishmentEvent(t *testing.T) {
 }
 
 func TestEventAt(t *testing.T) {
-	db := New()
+	td, cleanup := getTempDir(t)
+	defer cleanup()
+
+	db, err := New(td)
+	assert.NoError(t, err)
+	assert.NotNil(t, db)
 
 	icp := &event.Event{
 		Prefix:    "pre",
@@ -367,7 +421,7 @@ func TestEventAt(t *testing.T) {
 		Witnesses: []string{"w1"},
 	}
 
-	err := db.LogEvent(&event.Message{Event: icp})
+	err = db.LogEvent(&event.Message{Event: icp})
 	assert.NoError(t, err)
 
 	rot := &event.Event{
@@ -405,4 +459,16 @@ func TestEventAt(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, ixn, at.Event)
 
+}
+
+func getTempDir(t *testing.T) (string, func()) {
+	td, err := ioutil.TempDir("", "badger-test-*")
+	require.NoError(t, err)
+
+	cleanup := func() {
+		err := os.RemoveAll(td)
+		require.NoError(t, err)
+	}
+
+	return td, cleanup
 }

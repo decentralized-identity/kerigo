@@ -4,7 +4,7 @@ go 1.13
 
 require (
 	github.com/cenkalti/backoff/v4 v4.1.0
-	github.com/golang/protobuf v1.4.2
+	github.com/dgraph-io/badger v1.6.2
 	github.com/google/tink/go v1.5.0
 	github.com/mitchellh/mapstructure v1.1.2
 	github.com/pkg/errors v0.9.1

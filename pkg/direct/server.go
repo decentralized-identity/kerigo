@@ -8,6 +8,8 @@ import (
 
 	"github.com/pkg/errors"
 
+	"github.com/decentralized-identity/kerigo/pkg/db"
+	"github.com/decentralized-identity/kerigo/pkg/db/mem"
 	"github.com/decentralized-identity/kerigo/pkg/event"
 	"github.com/decentralized-identity/kerigo/pkg/keri"
 	"github.com/decentralized-identity/kerigo/pkg/keymanager"
@@ -21,6 +23,7 @@ type Server struct {
 	Addr string
 
 	KMS *keymanager.KeyManager
+	DB  db.DB
 
 	// BaseIdentity optionally specifies a function that returns
 	// the base context for incoming requests on this server.
@@ -38,7 +41,6 @@ type Server struct {
 
 	connLock sync.Mutex
 	conns    []*conn
-	reg      keri.Registry
 }
 
 func (r *Server) ListenAndServer() error {
@@ -61,7 +63,11 @@ func (r *Server) Serve(l net.Listener) error {
 		r.KMS = defaultKMS()
 	}
 
-	baseID, err := keri.New(r.KMS)
+	if r.DB == nil {
+		r.DB = mem.New()
+	}
+
+	baseID, err := keri.New(r.KMS, r.DB)
 	if err != nil {
 		return err
 	}
