@@ -1,29 +1,57 @@
 package log
 
 import (
-	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
-	"encoding/json"
 	"fmt"
 	"testing"
 
+	"github.com/google/tink/go/aead"
+	"github.com/google/tink/go/keyset"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/decentralized-identity/kerigo/pkg/db/mem"
 	"github.com/decentralized-identity/kerigo/pkg/derivation"
 	"github.com/decentralized-identity/kerigo/pkg/event"
+	"github.com/decentralized-identity/kerigo/pkg/keymanager"
 	"github.com/decentralized-identity/kerigo/pkg/prefix"
+	"github.com/decentralized-identity/kerigo/pkg/test"
+	testkms "github.com/decentralized-identity/kerigo/pkg/test/kms"
 )
 
 // TODO: move these to approved test vectors in main keri repo
+var (
+	incept    = []byte(`{"v":"KERI10JSON0000e6_","i":"ENqFtH6_cfDg8riLZ-GDvDaCKVn6clOJa7ZXXVXSWpRY","s":"0","t":"icp","kt":"1","k":["DSuhyBcPZEZLK-fcw5tzHn2N46wRCG_ZOoeKtWTOunRA"],"n":"EPYuj8mq_PYYsoBKkzX1kxSPGYBWaIya3slgCOyOtlqU","wt":"0","w":[],"c":[]}`)
+	inceptSig = []byte(`-AABAAMiMnE1gmjqoEuDmhbU7aqYBUqKCqAmrHPQB-tPUKSbH_IUXsbglEQ6TGlQT1k7G4VlnKoczYBUd7CPJuo5TnDg`)
+	rot       = []byte(`{"v":"KERI10JSON000122_","i":"ENqFtH6_cfDg8riLZ-GDvDaCKVn6clOJa7ZXXVXSWpRY","s":"1","t":"rot","p":"E9ZTKOhr-lqB7jbBMBpUIdMpfWvEswoMoc5UrwCRcTSc","kt":"1","k":["DVcuJOOJF1IE8svqEtrSuyQjGTd2HhfAkt9y2QkUtFJI"],"n":"E-dapdcC6XR1KWmWDsNl4J_OxcGxNZw1Xd95JH5a34fI","wt":"0","wr":[],"wa":[],"a":[]}`)
+	rotSig    = []byte(`-AABAA91xjNugSykLy0_IZsvkUxkVnZVlNqqhhZT5_VT9wK0pccNrD6i_3h_lTK5ZmXr0wsN6zn-4KMw3ZtYQ2bjbuDQ`)
+	ixn       = []byte(`{"v":"KERI10JSON000098_","i":"ENqFtH6_cfDg8riLZ-GDvDaCKVn6clOJa7ZXXVXSWpRY","s":"2","t":"ixn","p":"ELWbb2Oun3FTpWZqHYmeefM5B-11nZQBsxPfufyjJHy4","a":[]}`)
+	ixnSig    = []byte(`-AABAAqxzoxk4rltuP41tB8wEpHFC4Yd1TzhOGfuhlylbDFAm73jB2emdvaLjUP6FrHxiPqS2CcbAWaVNsmii80KJEBw`)
+	secrets   = []string{
+		"AgjD4nRlycmM5cPcAkfOATAp8wVldRsnc9f1tiwctXlw",
+		"AKUotEE0eAheKdDJh9QvNmSEmO_bjIav8V_GmctGpuCQ",
+		"AK-nVhMMJciMPvmF5VZE_9H-nhrgng9aJWf7_UHPtRNM",
+		"AT2cx-P5YUjIw_SLCHQ0pqoBWGk9s4N1brD-4pD_ANbs",
+		"Ap5waegfnuP6ezC18w7jQiPyQwYYsp9Yv9rYMlKAYL8k",
+		"Aqlc_FWWrxpxCo7R12uIz_Y2pHUH2prHx1kjghPa8jT8",
+		"AagumsL8FeGES7tYcnr_5oN6qcwJzZfLKxoniKUpG4qc",
+		"ADW3o9m3udwEf0aoOdZLLJdf1aylokP0lwwI_M2J9h0s",
+	}
+)
 
-var incept = []byte(`{"v":"KERI10JSON0000e6_","i":"ENqFtH6_cfDg8riLZ-GDvDaCKVn6clOJa7ZXXVXSWpRY","s":"0","t":"icp","kt":"1","k":["DSuhyBcPZEZLK-fcw5tzHn2N46wRCG_ZOoeKtWTOunRA"],"n":"EPYuj8mq_PYYsoBKkzX1kxSPGYBWaIya3slgCOyOtlqU","wt":"0","w":[],"c":[]}`)
-var inceptSig = []byte(`-AABAAMiMnE1gmjqoEuDmhbU7aqYBUqKCqAmrHPQB-tPUKSbH_IUXsbglEQ6TGlQT1k7G4VlnKoczYBUd7CPJuo5TnDg`)
-var rot = []byte(`{"v":"KERI10JSON000122_","i":"ENqFtH6_cfDg8riLZ-GDvDaCKVn6clOJa7ZXXVXSWpRY","s":"1","t":"rot","p":"E9ZTKOhr-lqB7jbBMBpUIdMpfWvEswoMoc5UrwCRcTSc","kt":"1","k":["DVcuJOOJF1IE8svqEtrSuyQjGTd2HhfAkt9y2QkUtFJI"],"n":"E-dapdcC6XR1KWmWDsNl4J_OxcGxNZw1Xd95JH5a34fI","wt":"0","wr":[],"wa":[],"a":[]}`)
-var rotSig = []byte(`-AABAA91xjNugSykLy0_IZsvkUxkVnZVlNqqhhZT5_VT9wK0pccNrD6i_3h_lTK5ZmXr0wsN6zn-4KMw3ZtYQ2bjbuDQ`)
-var ixn = []byte(`{"v":"KERI10JSON000098_","i":"ENqFtH6_cfDg8riLZ-GDvDaCKVn6clOJa7ZXXVXSWpRY","s":"2","t":"ixn","p":"ELWbb2Oun3FTpWZqHYmeefM5B-11nZQBsxPfufyjJHy4","a":[]}`)
-var ixnSig = []byte(`-AABAAqxzoxk4rltuP41tB8wEpHFC4Yd1TzhOGfuhlylbDFAm73jB2emdvaLjUP6FrHxiPqS2CcbAWaVNsmii80KJEBw`)
+func keyMgr() (*keymanager.KeyManager, error) {
+	kh, err := keyset.NewHandle(aead.AES256GCMKeyTemplate())
+	if err != nil {
+		return nil, err
+	}
+
+	a, err := aead.New(kh)
+	if err != nil {
+		return nil, err
+	}
+
+	return keymanager.NewKeyManager(keymanager.WithAEAD(a), keymanager.WithSecrets(secrets))
+}
 
 func TestOrder(t *testing.T) {
 	assert := assert.New(t)
@@ -53,6 +81,7 @@ func TestOrder(t *testing.T) {
 	assert.Nil(err)
 
 	err = db.LogEvent(&event.Message{Event: e})
+	assert.Nil(err)
 
 	latest, err := event.NewEvent(event.WithPrefix("pre"), event.WithType(event.ROT), event.WithSequence(3))
 	assert.Nil(err)
@@ -118,79 +147,108 @@ func TestVerifyAndApply(t *testing.T) {
 	assert := assert.New(t)
 	db := mem.New()
 
-	msg := &event.Message{Event: &event.Event{}}
-	err := json.Unmarshal(incept, msg.Event)
-	if !assert.Nil(err) {
-		return
-	}
+	kms := testkms.GetKMS(t, secrets)
+	icp := test.InceptionFromSecrets(t, secrets[0], secrets[1])
 
+	ser, err := icp.Serialize()
+	assert.Nil(err)
+
+	der, err := derivation.New(derivation.WithCode(derivation.Ed25519Attached), derivation.WithSigner(kms.Signer()))
+	assert.Nil(err)
+	_, err = der.Derive(ser)
+	assert.Nil(err)
+
+	msg := &event.Message{Event: icp, Signatures: []derivation.Derivation{*der}}
 	l := New(msg.Event.Prefix, db)
-	sigs, err := derivation.ParseAttachedSignatures(bytes.NewBuffer(inceptSig))
-	assert.Nil(err)
-	assert.Len(sigs, 1)
+	assert.NoError(l.Apply(msg))
+	assert.Equal(1, l.Size())
 
-	msg.Signatures = sigs
-
-	err = l.Verify(msg)
-	assert.Nil(err)
-
-	// apply the inception event
-	err = l.Apply(msg)
-	assert.Nil(err)
-	assert.Equal(l.Size(), 1)
-
-	msg = &event.Message{Event: &event.Event{}}
-	err = json.Unmarshal(rot, msg.Event)
+	// Interaction
+	ixn, err := event.NewInteractionEvent(
+		event.WithSequence(1),
+		event.WithPrefix(icp.Prefix),
+	)
 	assert.Nil(err)
 
-	// #2 rotations
-	sigs, err = derivation.ParseAttachedSignatures(bytes.NewBuffer(rotSig))
-	assert.Nil(err)
-	assert.Len(sigs, 1)
-
-	msg.Signatures = sigs
-
-	// Modify the event to be different - should not validate
-	msg.Event.EventType = "invalid"
-
-	err = l.Verify(msg)
-	assert.NotNil(err)
-
-	// back to normal, should work
-	msg.Event.EventType = "rot"
-	err = l.Verify(msg)
-	assert.Nil(err)
-
-	// invalid sequence - should be added to the pending escrow
-	msg.Event.Sequence = "42"
-	err = l.Apply(msg)
-	assert.Nil(err)
-	assert.Len(l.Pending, 1)
-	assert.Equal(l.Size(), 1)
-
-	// apply again, should not change events length
-	err = l.Apply(msg)
-	assert.Nil(err)
-	if assert.Equal(l.db.LogSize(l.prefix), 1) {
-		// assert.Len(l.Events[0].Signatures, 1)
+	// No signatures
+	err = l.Apply(&event.Message{Event: ixn})
+	if assert.Error(err) {
+		assert.Equal("no attached signatures to verify", err.Error())
 	}
+	assert.Equal(l.Size(), 1)
 
-	// Interaction event
+	ser, err = ixn.Serialize()
+	assert.Nil(err)
+	_, err = der.Derive(ser)
+	assert.Nil(err)
 
-	// TODO: need test vectors for this.
+	// Valid sig, no digest
+	err = l.Apply(&event.Message{Event: ixn, Signatures: []derivation.Derivation{*der}})
+	if assert.Error(err) {
+		assert.Equal("unable to determine digest derivation (unable to determin derivation (invalid prefix length))", err.Error())
+	}
+	assert.Equal(1, l.Size())
 
-	// msg = &event.Message{Event: &event.Event{}}
-	// err = json.Unmarshal(ixn, msg.Event)
-	// assert.Nil(err)
+	ixn.PriorEventDigest, err = icp.GetDigest()
+	assert.Nil(err)
+	ser, err = ixn.Serialize()
+	assert.Nil(err)
+	_, err = der.Derive(ser)
+	assert.Nil(err)
 
-	// sigs, err = derivation.ParseAttachedSignatures(bytes.NewBuffer(ixnSig))
-	// assert.Nil(err)
-	// assert.Len(sigs, 1)
+	assert.NoError(l.Apply(&event.Message{Event: ixn, Signatures: []derivation.Derivation{*der}}))
+	assert.Equal(2, l.Size())
 
-	// msg.Signatures = sigs
+	// Future event
+	ixn, err = event.NewInteractionEvent(
+		event.WithSequence(3),
+		event.WithPrefix(icp.Prefix),
+	)
+	assert.Nil(err)
+	ixn.PriorEventDigest = "invalid"
 
-	// err = l.Verify(msg)
-	// assert.Nil(err)
+	// No signatures - should silently ignore
+	assert.NoError(l.Apply(&event.Message{Event: ixn, Signatures: []derivation.Derivation{}}))
+	assert.Equal(2, l.Size())
+
+	// Should add to pending
+	ser, err = ixn.Serialize()
+	assert.Nil(err)
+	_, err = der.Derive(ser)
+	assert.Nil(err)
+
+	assert.NoError(l.Apply(&event.Message{Event: ixn, Signatures: []derivation.Derivation{*der}}))
+	assert.Equal(2, l.Size())
+	assert.Equal(1, len(l.Pending))
+
+	// Rotation event
+	assert.NoError(kms.Rotate())
+	der, err = derivation.New(derivation.WithCode(derivation.Ed25519Attached), derivation.WithSigner(kms.Signer()))
+	assert.Nil(err)
+
+	keyDer, err := derivation.New(derivation.WithCode(derivation.Ed25519), derivation.WithRaw(kms.PublicKey()))
+	assert.NoError(err)
+	keyPre := prefix.New(keyDer)
+
+	rot, err := event.NewRotationEvent(
+		event.WithPrefix(icp.Prefix),
+		event.WithSequence(2),
+		event.WithKeys(keyPre),
+		event.WithNext("1", derivation.Blake3256, prefix.New(kms.Next())),
+	)
+	assert.Nil(err)
+
+	rot.PriorEventDigest, err = l.Current().GetDigest()
+	assert.Nil(err)
+
+	ser, err = rot.Serialize()
+	assert.Nil(err)
+	_, err = der.Derive(ser)
+	assert.Nil(err)
+
+	assert.NoError(l.Apply(&event.Message{Event: rot, Signatures: []derivation.Derivation{*der}}))
+	assert.Equal(3, l.Size())
+	assert.Equal(0, len(l.Pending))
 }
 
 func TestMultiSigApply(t *testing.T) {
@@ -475,7 +533,8 @@ func TestMergeSignatures(t *testing.T) {
 	assert := assert.New(t)
 
 	d1, _ := derivation.New(derivation.WithCode(derivation.Blake2b256))
-	d1.Derive([]byte("asdf"))
+	_, err := d1.Derive([]byte("asdf"))
+	assert.Nil(err)
 	d1.KeyIndex = 0
 
 	new := []derivation.Derivation{*d1}
@@ -484,7 +543,8 @@ func TestMergeSignatures(t *testing.T) {
 	assert.Len(sigs, 1)
 
 	d2, _ := derivation.New(derivation.WithCode(derivation.Blake2b256))
-	d2.Derive([]byte("fdsa"))
+	_, err = d2.Derive([]byte("fdsa"))
+	assert.Nil(err)
 	d2.KeyIndex = 1
 
 	sigs = mergeSignatures(sigs, []derivation.Derivation{*d2})

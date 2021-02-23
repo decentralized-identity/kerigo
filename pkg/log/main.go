@@ -13,7 +13,6 @@ import (
 	"github.com/decentralized-identity/kerigo/pkg/db"
 	"github.com/decentralized-identity/kerigo/pkg/derivation"
 	"github.com/decentralized-identity/kerigo/pkg/event"
-	"github.com/decentralized-identity/kerigo/pkg/prefix"
 )
 
 // Log contains the Key Event Log for a given identifier
@@ -129,7 +128,8 @@ func (l *Log) KeyState() (*event.Event, error) {
 	err := l.db.StreamEstablisment(l.prefix, func(msg *event.Message) {
 		e := msg.Event
 		if kst == nil {
-			kst = e
+			kst = &event.Event{}
+			*kst = *e
 		}
 
 		// Assumption: these will always be provided in the messages
@@ -169,6 +169,10 @@ func (l *Log) KeyState() (*event.Event, error) {
 
 		last = e
 	})
+
+	if err != nil {
+		return nil, fmt.Errorf("error processing log stream (%s)", err.Error())
+	}
 
 	// key state events don't need the sequence number
 	kst.Sequence = ""
@@ -243,7 +247,7 @@ func (l *Log) Apply(e *event.Message) error {
 		// key state message (since it takes into account ROT at 8)
 
 		return l.AddSignatures(e)
-	} else if e.Event.SequenceInt() != state.LastEstablishment.SequenceInt()+1 {
+	} else if e.Event.SequenceInt() != state.LastEvent.SequenceInt()+1 {
 		// if there are no attached signatures to the event, we do not escrow
 		// DOS prevention - flooding an escrow with unverifiable events
 		// TODO: currently we are not considering this an error condition, is it?
@@ -277,15 +281,7 @@ func (l *Log) Apply(e *event.Message) error {
 
 	// if this is a rotation event, we must validate the next keys
 	if e.Event.ILK() == event.ROT {
-		keyPre := []prefix.Prefix{}
-		for _, k := range e.Event.Keys {
-			kp, err := prefix.FromString(k)
-			if err != nil {
-				return fmt.Errorf("unable to verify next digest (%s)", err.Error())
-			}
-			keyPre = append(keyPre, kp)
-		}
-
+		// the latest establishment event has the current Next digest
 		lastEstablisment := l.EventAt(state.LastEstablishment.SequenceInt())
 		lastNextDig, err := derivation.FromPrefix(lastEstablisment.Event.Next)
 		if err != nil {
@@ -293,13 +289,13 @@ func (l *Log) Apply(e *event.Message) error {
 		}
 
 		// calculate the next digest based on the current keys/signing threshold
-		currentNextDig, err := e.Event.NextDigest(lastNextDig.Code)
+		nextDig, err := e.Event.NextDigest(lastNextDig.Code)
 		if err != nil {
 			return fmt.Errorf("unable to parse next digest event (%s)", err.Error())
 		}
 
 		// this should match what was stored in the last establishment
-		if currentNextDig != lastNextDig.AsPrefix() {
+		if nextDig != lastNextDig.AsPrefix() {
 			return errors.New("next digest invalid")
 		}
 	}
@@ -368,8 +364,7 @@ func (l *Log) Apply(e *event.Message) error {
 		// duplicitous escrow, so we can just return
 		// if the event is still waiting for additional signatures
 		// it will remain in escrow, and we can return (since it was)
-		// first seen,
-		// If there is an error, for example the
+		// first seen
 		for i := range next {
 			err = l.Apply(next[i])
 			if err == nil {
@@ -378,7 +373,7 @@ func (l *Log) Apply(e *event.Message) error {
 
 			// there as some other error applying the event to the log
 			// at this point we dump from escrow and continue on
-			l.Pending.Remove(next[i])
+			_ = l.Pending.Remove(next[i])
 		}
 	}
 
@@ -441,6 +436,8 @@ func (l *Log) Verify(m *event.Message) error {
 		return fmt.Errorf("unable to build state (%s)", err.Error())
 	}
 
+	// if we are rotating, the event will be signed using the keys included in the
+	// rotation event.
 	if m.Event.EventType == event.ROT.String() {
 		state = m.Event
 	}
