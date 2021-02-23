@@ -52,6 +52,17 @@ func (e Escrow) Add(m *event.Message) error {
 	return nil
 }
 
+// Remove an event from the escrow
+func (e Escrow) Remove(m *event.Message) error {
+	digest, err := digestEvent(m.Event)
+	if err != nil {
+		return err
+	}
+
+	delete(e, digest)
+	return nil
+}
+
 // Clear all escrowed messages with the same sequence number
 // Escrowed events are indexed by the digest of their event - there could be
 // competeing versions of events if the prefix owner is being duplicitous, but

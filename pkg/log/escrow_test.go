@@ -135,7 +135,8 @@ func TestEscrow(t *testing.T) {
 	assert.Len(msgs, 2)
 
 	// Clear events
-	esc.Clear(*ixn)
+	_, err = esc.Clear(*ixn)
+	assert.Nil(err)
 	assert.Len(esc, 4)
 	msgs = esc.ForSequence(3)
 	assert.Empty(msgs)
