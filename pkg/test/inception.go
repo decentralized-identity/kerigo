@@ -12,22 +12,68 @@ import (
 	"github.com/decentralized-identity/kerigo/pkg/version"
 )
 
-func InceptionFromSecrets(t *testing.T, secret, next string) *event.Event {
-	der, err := derivation.FromPrefix(secret)
-	assert.NoError(t, err)
+func InceptionFromSecrets(t *testing.T, keys, nexts []string, threshold, nextThreshold event.SigThreshold) *event.Event {
+	var keyPres, nextPres []prefix.Prefix
 
-	edPriv := ed25519.NewKeyFromSeed(der.Raw)
-	edPub := edPriv.Public()
+	for _, k := range keys {
+		kd, err := derivation.FromPrefix(k)
+		if !assert.NoError(t, err) {
+			return nil
+		}
+		edPriv := ed25519.NewKeyFromSeed(kd.Raw)
+		keyDer, err := derivation.New(derivation.WithCode(derivation.Ed25519), derivation.WithRaw(edPriv.Public().(ed25519.PublicKey)))
+		if !assert.NoError(t, err) {
+			return nil
+		}
+		keyPres = append(keyPres, prefix.New(keyDer))
+	}
 
-	nextder, err := derivation.FromPrefix(next)
-	assert.NoError(t, err)
+	for _, k := range nexts {
+		kd, err := derivation.FromPrefix(k)
+		if !assert.NoError(t, err) {
+			return nil
+		}
+		edPriv := ed25519.NewKeyFromSeed(kd.Raw)
+		keyDer, err := derivation.New(derivation.WithCode(derivation.Ed25519), derivation.WithRaw(edPriv.Public().(ed25519.PublicKey)))
+		if !assert.NoError(t, err) {
+			return nil
+		}
+		nextPres = append(nextPres, prefix.New(keyDer))
+	}
 
-	nextPriv := ed25519.NewKeyFromSeed(nextder.Raw)
-	nextPub := nextPriv.Public()
-	nextPubDer, err := derivation.New(derivation.WithCode(derivation.Ed25519), derivation.WithRaw(nextPub.(ed25519.PublicKey)))
-	assert.NoError(t, err)
+	icp, err := event.NewInceptionEvent(
+		event.WithKeys(keyPres...),
+		event.WithDefaultVersion(event.JSON),
+		event.WithNext(nextThreshold.String(), derivation.Blake3256, nextPres...),
+	)
+	if !assert.NoError(t, err) {
+		return nil
+	}
+	icp.SigThreshold = &threshold
 
-	return Inception(t, edPub.(ed25519.PublicKey), nextPubDer)
+	icp.Prefix = derivation.Blake3256.Default()
+	eventBytes, err := icp.Serialize()
+	if !assert.NoError(t, err) {
+		return nil
+	}
+	icp.Version = event.VersionString(event.JSON, version.Code(), len(eventBytes))
+	icp.Prefix = ""
+
+	ser, err := icp.Serialize()
+	if !assert.NoError(t, err) {
+		return nil
+	}
+
+	saDerivation, _ := derivation.New(derivation.WithCode(derivation.Blake3256))
+	_, err = saDerivation.Derive(ser)
+	if !assert.NoError(t, err) {
+		return nil
+	}
+
+	selfAdd := prefix.New(saDerivation)
+	icp.Prefix = selfAdd.String()
+
+	return icp
 }
 
 func Inception(t *testing.T, edPub ed25519.PublicKey, nextPubDer *derivation.Derivation) *event.Event {
@@ -69,6 +115,7 @@ func Inception(t *testing.T, edPub ed25519.PublicKey, nextPubDer *derivation.Der
 	icp.Prefix = selfAddAID
 
 	eventBytes, err = event.Serialize(icp, event.JSON)
+	assert.NoError(t, err)
 	assert.Equal(t, eventBytesExpected, len(eventBytes))
 
 	return icp
