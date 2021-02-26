@@ -4,16 +4,14 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"fmt"
+	"strings"
 	"testing"
 
-	"github.com/google/tink/go/aead"
-	"github.com/google/tink/go/keyset"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/decentralized-identity/kerigo/pkg/db/mem"
 	"github.com/decentralized-identity/kerigo/pkg/derivation"
 	"github.com/decentralized-identity/kerigo/pkg/event"
-	"github.com/decentralized-identity/kerigo/pkg/keymanager"
 	"github.com/decentralized-identity/kerigo/pkg/prefix"
 	"github.com/decentralized-identity/kerigo/pkg/test"
 	testkms "github.com/decentralized-identity/kerigo/pkg/test/kms"
@@ -21,13 +19,7 @@ import (
 
 // TODO: move these to approved test vectors in main keri repo
 var (
-	incept    = []byte(`{"v":"KERI10JSON0000e6_","i":"ENqFtH6_cfDg8riLZ-GDvDaCKVn6clOJa7ZXXVXSWpRY","s":"0","t":"icp","kt":"1","k":["DSuhyBcPZEZLK-fcw5tzHn2N46wRCG_ZOoeKtWTOunRA"],"n":"EPYuj8mq_PYYsoBKkzX1kxSPGYBWaIya3slgCOyOtlqU","wt":"0","w":[],"c":[]}`)
-	inceptSig = []byte(`-AABAAMiMnE1gmjqoEuDmhbU7aqYBUqKCqAmrHPQB-tPUKSbH_IUXsbglEQ6TGlQT1k7G4VlnKoczYBUd7CPJuo5TnDg`)
-	rot       = []byte(`{"v":"KERI10JSON000122_","i":"ENqFtH6_cfDg8riLZ-GDvDaCKVn6clOJa7ZXXVXSWpRY","s":"1","t":"rot","p":"E9ZTKOhr-lqB7jbBMBpUIdMpfWvEswoMoc5UrwCRcTSc","kt":"1","k":["DVcuJOOJF1IE8svqEtrSuyQjGTd2HhfAkt9y2QkUtFJI"],"n":"E-dapdcC6XR1KWmWDsNl4J_OxcGxNZw1Xd95JH5a34fI","wt":"0","wr":[],"wa":[],"a":[]}`)
-	rotSig    = []byte(`-AABAA91xjNugSykLy0_IZsvkUxkVnZVlNqqhhZT5_VT9wK0pccNrD6i_3h_lTK5ZmXr0wsN6zn-4KMw3ZtYQ2bjbuDQ`)
-	ixn       = []byte(`{"v":"KERI10JSON000098_","i":"ENqFtH6_cfDg8riLZ-GDvDaCKVn6clOJa7ZXXVXSWpRY","s":"2","t":"ixn","p":"ELWbb2Oun3FTpWZqHYmeefM5B-11nZQBsxPfufyjJHy4","a":[]}`)
-	ixnSig    = []byte(`-AABAAqxzoxk4rltuP41tB8wEpHFC4Yd1TzhOGfuhlylbDFAm73jB2emdvaLjUP6FrHxiPqS2CcbAWaVNsmii80KJEBw`)
-	secrets   = []string{
+	secrets = []string{
 		"AgjD4nRlycmM5cPcAkfOATAp8wVldRsnc9f1tiwctXlw",
 		"AKUotEE0eAheKdDJh9QvNmSEmO_bjIav8V_GmctGpuCQ",
 		"AK-nVhMMJciMPvmF5VZE_9H-nhrgng9aJWf7_UHPtRNM",
@@ -38,20 +30,6 @@ var (
 		"ADW3o9m3udwEf0aoOdZLLJdf1aylokP0lwwI_M2J9h0s",
 	}
 )
-
-func keyMgr() (*keymanager.KeyManager, error) {
-	kh, err := keyset.NewHandle(aead.AES256GCMKeyTemplate())
-	if err != nil {
-		return nil, err
-	}
-
-	a, err := aead.New(kh)
-	if err != nil {
-		return nil, err
-	}
-
-	return keymanager.NewKeyManager(keymanager.WithAEAD(a), keymanager.WithSecrets(secrets))
-}
 
 func TestOrder(t *testing.T) {
 	assert := assert.New(t)
@@ -148,7 +126,8 @@ func TestVerifyAndApply(t *testing.T) {
 	db := mem.New()
 
 	kms := testkms.GetKMS(t, secrets)
-	icp := test.InceptionFromSecrets(t, secrets[0], secrets[1])
+	thresh, _ := event.NewSigThreshold(1)
+	icp := test.InceptionFromSecrets(t, []string{secrets[0]}, []string{secrets[1]}, *thresh, *thresh)
 
 	ser, err := icp.Serialize()
 	assert.Nil(err)
@@ -170,11 +149,14 @@ func TestVerifyAndApply(t *testing.T) {
 	)
 	assert.Nil(err)
 
+	// Error Cases to test:
+	//
 	// No signatures
-	err = l.Apply(&event.Message{Event: ixn})
-	if assert.Error(err) {
-		assert.Equal("no attached signatures to verify", err.Error())
-	}
+	// Valid signatures but no digest
+	// Valid signatures but invalid digest
+
+	// No signatures - these get silently ignored
+	assert.NoError(l.Apply(&event.Message{Event: ixn}))
 	assert.Equal(l.Size(), 1)
 
 	ser, err = ixn.Serialize()
@@ -189,6 +171,21 @@ func TestVerifyAndApply(t *testing.T) {
 	}
 	assert.Equal(1, l.Size())
 
+	// Valid sig invalid digest
+	ixn.PriorEventDigest = fmt.Sprintf("%s%s", derivation.Blake3256.String(), strings.Repeat("A", derivation.Blake3256.PrefixBase64Length()-1))
+	ser, err = ixn.Serialize()
+	assert.Nil(err)
+	_, err = der.Derive(ser)
+	assert.Nil(err)
+
+	err = l.Apply(&event.Message{Event: ixn, Signatures: []derivation.Derivation{*der}})
+	if assert.Error(err) {
+		assert.Equal("invalid digest for new event", err.Error())
+	}
+	assert.Equal(1, l.Size())
+	assert.Len(l.Duplicitous, 1)
+
+	// Valid Sig/Digest - should apply
 	ixn.PriorEventDigest, err = icp.GetDigest()
 	assert.Nil(err)
 	ser, err = ixn.Serialize()
@@ -199,17 +196,30 @@ func TestVerifyAndApply(t *testing.T) {
 	assert.NoError(l.Apply(&event.Message{Event: ixn, Signatures: []derivation.Derivation{*der}}))
 	assert.Equal(2, l.Size())
 
+	// applying the same event again should not change the log
+	assert.NoError(l.Apply(&event.Message{Event: ixn, Signatures: []derivation.Derivation{*der}}))
+	assert.Equal(2, l.Size())
+	assert.Len(l.Duplicitous, 1)
+	assert.Len(l.Pending, 0)
+
+	// Future events should be escrowed.
+	// Two added: one without a valid digest - this one will be
+	// added to the duplicitous escrow when processed
+	// The second will have a valid digest - that one shoudl be added to the
+	// the log automatically when the interveining event gets applied
+
 	// Future event
 	ixn, err = event.NewInteractionEvent(
 		event.WithSequence(3),
 		event.WithPrefix(icp.Prefix),
 	)
 	assert.Nil(err)
-	ixn.PriorEventDigest = "invalid"
+	ixn.PriorEventDigest = fmt.Sprintf("%s%s", derivation.Blake3256.String(), strings.Repeat("A", derivation.Blake3256.PrefixBase64Length()-1))
 
 	// No signatures - should silently ignore
 	assert.NoError(l.Apply(&event.Message{Event: ixn, Signatures: []derivation.Derivation{}}))
 	assert.Equal(2, l.Size())
+	assert.Len(l.Pending, 0)
 
 	// Should add to pending
 	ser, err = ixn.Serialize()
@@ -221,7 +231,8 @@ func TestVerifyAndApply(t *testing.T) {
 	assert.Equal(2, l.Size())
 	assert.Equal(1, len(l.Pending))
 
-	// Rotation event
+	// Rotate the Keys and use the new key to sign a future event
+	// that will become valid after the applciation of the ROT event
 	assert.NoError(kms.Rotate())
 	der, err = derivation.New(derivation.WithCode(derivation.Ed25519Attached), derivation.WithSigner(kms.Signer()))
 	assert.Nil(err)
@@ -241,292 +252,210 @@ func TestVerifyAndApply(t *testing.T) {
 	rot.PriorEventDigest, err = l.Current().GetDigest()
 	assert.Nil(err)
 
+	// Future event
+	ixn, err = event.NewInteractionEvent(
+		event.WithSequence(3),
+		event.WithPrefix(icp.Prefix),
+		event.WithSeals(event.SealArray{&event.Seal{Root: "asdf"}}),
+	)
+	assert.Nil(err)
+
+	ixn.PriorEventDigest, err = rot.GetDigest()
+	assert.Nil(err)
+	ser, err = ixn.Serialize()
+	assert.Nil(err)
+	_, err = der.Derive(ser)
+	assert.Nil(err)
+	assert.NoError(l.Apply(&event.Message{Event: ixn, Signatures: []derivation.Derivation{*der}}))
+	assert.Equal(2, l.Size())
+	assert.Len(l.Pending, 2)
+
 	ser, err = rot.Serialize()
 	assert.Nil(err)
 	_, err = der.Derive(ser)
 	assert.Nil(err)
 
+	// Will apply ROT, duplicitous escrow event with invalid signature, and process valid pending
 	assert.NoError(l.Apply(&event.Message{Event: rot, Signatures: []derivation.Derivation{*der}}))
-	assert.Equal(3, l.Size())
-	assert.Equal(0, len(l.Pending))
+	assert.Equal(4, l.Size())
+	assert.Len(l.Pending, 0)
+	assert.Len(l.Duplicitous, 2)
+
+	// Confirm the last event is the correct one
+	crnt := l.Current()
+	assert.Equal(ixn, crnt)
 }
 
 func TestMultiSigApply(t *testing.T) {
 	assert := assert.New(t)
 
-	keys, err := newKeys(3)
-	if !assert.Nil(err) {
-		return
-	}
-
-	prefixes := []prefix.Prefix{}
-	for _, k := range keys {
-		prefixes = append(prefixes, k.pre)
-	}
-
-	e, err := event.NewInceptionEvent(
-		event.WithPrefix("pre"),
-		event.WithKeys(prefixes...),
-		event.WithThreshold(3),
-		event.WithDefaultVersion(event.JSON),
-	)
-
-	assert.Nil(err)
-
 	db := mem.New()
-	l := New("pre", db)
-	err = l.Apply(&event.Message{Event: e})
-	if !assert.Nil(err) || !assert.Equal(l.Size(), 1) {
-		return
-	}
 
-	// create a valid next event
-	serialized, err := e.Serialize()
-	if !assert.Nil(err) {
-		return
-	}
+	kms1 := testkms.GetKMS(t, secrets[:2])
+	sigDer1, err := derivation.New(derivation.WithCode(derivation.Ed25519Attached), derivation.WithSigner(kms1.Signer()))
+	assert.Nil(err)
+	kms2 := testkms.GetKMS(t, secrets[3:5])
+	sigDer2, err := derivation.New(derivation.WithCode(derivation.Ed25519Attached), derivation.WithSigner(kms2.Signer()))
+	sigDer2.KeyIndex = 1
+	assert.Nil(err)
+	kms3 := testkms.GetKMS(t, secrets[6:])
+	sigDer3, err := derivation.New(derivation.WithCode(derivation.Ed25519Attached), derivation.WithSigner(kms3.Signer()))
+	sigDer3.KeyIndex = 2
+	assert.Nil(err)
 
-	digest, err := event.DigestString(serialized, derivation.Blake3256)
-	if !assert.Nil(err) {
-		return
-	}
+	threshold, err := event.NewMultiWeighted([]string{"1/2", "1/2", "1"}, []string{"1"})
+	assert.Nil(err)
 
-	next, err := event.NewEvent(
-		event.WithPrefix("pre"),
-		event.WithKeys(prefixes...),
-		event.WithType(event.ROT),
+	icp := test.InceptionFromSecrets(
+		t,
+		[]string{secrets[0], secrets[3], secrets[6]},
+		[]string{secrets[1], secrets[4], secrets[7]},
+		*threshold,
+		*threshold,
+	)
+
+	ser, err := icp.Serialize()
+	assert.Nil(err)
+	_, err = sigDer1.Derive(ser)
+	assert.Nil(err)
+	_, err = sigDer2.Derive(ser)
+	assert.Nil(err)
+	_, err = sigDer3.Derive(ser)
+	assert.Nil(err)
+
+	msg := &event.Message{Event: icp, Signatures: []derivation.Derivation{*sigDer1, *sigDer2, *sigDer3}}
+	l := New(msg.Event.Prefix, db)
+	assert.NoError(l.Apply(msg))
+	assert.Equal(1, l.Size())
+
+	// interaction event with all necessary signatures provided
+	ixn, err := event.NewInteractionEvent(
 		event.WithSequence(1),
-		event.WithDigest(digest),
-		event.WithThreshold(2),
-		event.WithDefaultVersion(event.JSON),
+		event.WithPrefix(icp.Prefix),
 	)
 	assert.Nil(err)
-
-	serialized, err = next.Serialize()
-	if !assert.Nil(err) {
-		return
-	}
-
-	// nextDigest, err := event.DigestString(serialized, derivation.Blake3256)
-	// if !assert.Nil(err) {
-	// 	return
-	// }
-
-	// create a bad next event
-	badNext, err := event.NewEvent(
-		event.WithPrefix("pre"),
-		event.WithKeys(prefixes...),
-		event.WithType(event.IXN),
-		event.WithSequence(1),
-		event.WithDigest(digest),
-		event.WithThreshold(3),
-		event.WithDefaultVersion(event.JSON),
-	)
+	ixn.PriorEventDigest, err = icp.GetDigest()
 	assert.Nil(err)
 
-	serialized, err = badNext.Serialize()
-	if !assert.Nil(err) {
-		return
-	}
-
-	// badNextDigest, err := event.DigestString(serialized, derivation.Blake3256)
-	// if !assert.Nil(err) {
-	// 	return
-	// }
-
-	// attach a single sig (need two)
-	// Doesn't need to be valid - we aren't running through the verification
-	sig, err := derivation.New(derivation.WithCode(derivation.Ed25519Attached))
-	if !assert.Nil(err) {
-		return
-	}
-	sig.KeyIndex = 0
-
-	// event has no sigs, so should be escrowed
-	// err = l.Apply(&event.Message{Event: next, Signatures: []derivation.Derivation{*sig}})
-	// assert.Nil(err)
-	// assert.Len(l.Pending, 1)
-	// if !assert.Contains(l.Pending, nextDigest) || !assert.Len(l.Pending[nextDigest].Signatures, 1) {
-	// 	return
-	// }
-
-	// Apply the event again - this should "escrow" but the escrow length should not increase
-	// err = l.Apply(&event.Message{Event: next, Signatures: []derivation.Derivation{*sig}})
-	// assert.Nil(err)
-	// assert.Len(l.Events, 1)
-	// if !assert.Contains(l.Pending, nextDigest) || !assert.Len(l.Pending[nextDigest].Signatures, 1) {
-	// 	return
-	// }
-
-	// // Change the signature key, this is equal to adding another signature
-	// sig.KeyIndex = 1
-
-	// // 2 of 3 sigs, should escrow
-	// err = l.Apply(&event.Message{Event: next, Signatures: []derivation.Derivation{*sig}})
-	// assert.Nil(err)
-	// assert.Len(l.Events, 1)
-	// if !assert.Contains(l.Pending, nextDigest) || !assert.Len(l.Pending[nextDigest].Signatures, 2) {
-	// 	return
-	// }
-
-	// // another key sig
-	// sig.KeyIndex = 2
-
-	// // 3 of 3, should apply
-	// err = l.Apply(&event.Message{Event: next, Signatures: []derivation.Derivation{*sig}})
-	// assert.Nil(err)
-	// assert.Len(l.Events, 2)
-	// assert.Empty(l.Pending)
-	// assert.Len(l.Events[1].Signatures, 3)
-
-	// // add a 4th signature = this should simply tack on to our existing sig list in the log
-	// sig.KeyIndex = 3
-
-	// // 4 of 3, should apply
-	// err = l.Apply(&event.Message{Event: next, Signatures: []derivation.Derivation{*sig}})
-	// assert.Nil(err)
-	// assert.Len(l.Events, 2)
-	// assert.Empty(l.Pending)
-	// assert.Len(l.Events[1].Signatures, 4)
-
-	// // send through our bad event
-	// err = l.Apply(&event.Message{Event: badNext, Signatures: []derivation.Derivation{*sig}})
-	// assert.NotNil(err)
-	// assert.Len(l.Events, 2)
-	// assert.Empty(l.Pending)
-	// assert.Contains(l.Duplicitous, badNextDigest)
-}
-
-func TestEscrowApply(t *testing.T) {
-	assert := assert.New(t)
-
-	keys, err := newKeys(3)
-	if !assert.Nil(err) {
-		return
-	}
-
-	prefixes := []prefix.Prefix{}
-	for _, k := range keys {
-		prefixes = append(prefixes, k.pre)
-	}
-
-	e, err := event.NewInceptionEvent(
-		event.WithPrefix("pre"),
-		event.WithKeys(prefixes...),
-		event.WithThreshold(2),
-		event.WithDefaultVersion(event.JSON),
-	)
-
+	ser, err = ixn.Serialize()
+	assert.Nil(err)
+	_, err = sigDer1.Derive(ser)
+	assert.Nil(err)
+	_, err = sigDer2.Derive(ser)
+	assert.Nil(err)
+	_, err = sigDer3.Derive(ser)
 	assert.Nil(err)
 
-	db := mem.New()
-	l := New("pre", db)
-	err = l.Apply(&event.Message{Event: e})
-	if !assert.Nil(err) || !assert.Equal(l.Size(), 1) {
-		return
-	}
+	assert.NoError(l.Apply(&event.Message{Event: ixn, Signatures: []derivation.Derivation{*sigDer1, *sigDer2, *sigDer3}}))
+	assert.Equal(2, l.Size())
+	assert.Len(l.Pending, 0)
 
-	// create a valid next event
-	serialized, err := e.Serialize()
-	if !assert.Nil(err) {
-		return
-	}
-
-	digest, err := event.DigestString(serialized, derivation.Blake3256)
-	if !assert.Nil(err) {
-		return
-	}
-
-	next, err := event.NewEvent(
-		event.WithPrefix("pre"),
-		event.WithKeys(prefixes...),
-		event.WithType(event.ROT),
-		event.WithSequence(1),
-		event.WithDigest(digest),
-		event.WithThreshold(1),
-		event.WithDefaultVersion(event.JSON),
-	)
-	assert.Nil(err)
-
-	serialized, err = next.Serialize()
-	if !assert.Nil(err) {
-		return
-	}
-
-	nextDigest, err := event.DigestString(serialized, derivation.Blake3256)
-	if !assert.Nil(err) {
-		return
-	}
-
-	// create a valid event for after next.
-	nextNext, err := event.NewEvent(
-		event.WithPrefix("pre"),
-		event.WithKeys(prefixes...),
-		event.WithType(event.ROT),
+	// event with async signature receipt
+	ixn2, err := event.NewInteractionEvent(
 		event.WithSequence(2),
-		event.WithDigest(nextDigest),
-		event.WithThreshold(1),
-		event.WithDefaultVersion(event.JSON),
+		event.WithPrefix(icp.Prefix),
 	)
 	assert.Nil(err)
-
-	// create a duplicitous nextNext event
-	dupNextNext, err := event.NewEvent(
-		event.WithPrefix("pre"),
-		event.WithKeys(prefixes[0]),
-		event.WithType(event.ROT),
-		event.WithSequence(2),
-		event.WithDigest(nextDigest),
-		event.WithThreshold(3),
-		event.WithDefaultVersion(event.JSON),
-	)
+	ixn2.PriorEventDigest, err = ixn.GetDigest()
 	assert.Nil(err)
 
-	// attach a single sig (need two)
-	// Doesn't need to be valid - we aren't running through the verification
-	sig, err := derivation.New(derivation.WithCode(derivation.Ed25519Attached))
-	if !assert.Nil(err) {
-		return
-	}
-	sig.KeyIndex = 0
-
-	// apply nextNext - it will be out of order, so should escrow under pending.
-	err = l.Apply(&event.Message{Event: nextNext, Signatures: []derivation.Derivation{*sig}})
+	ser, err = ixn2.Serialize()
 	assert.Nil(err)
+	_, err = sigDer1.Derive(ser)
+	assert.Nil(err)
+	_, err = sigDer2.Derive(ser)
+	assert.Nil(err)
+	_, err = sigDer3.Derive(ser)
+	assert.Nil(err)
+
+	// Not enough sigs
+	assert.NoError(l.Apply(&event.Message{Event: ixn2, Signatures: []derivation.Derivation{*sigDer1}}))
+	assert.Equal(2, l.Size())
 	assert.Len(l.Pending, 1)
-	assert.Equal(l.Size(), 1)
 
-	// apply dupNextNext - it will be out of order, so should also escrow under pending.
-	err = l.Apply(&event.Message{Event: dupNextNext, Signatures: []derivation.Derivation{*sig}})
+	// enough. apply.
+	assert.NoError(l.Apply(&event.Message{Event: ixn2, Signatures: []derivation.Derivation{*sigDer3}}))
+	assert.Equal(3, l.Size())
+	assert.Len(l.Pending, 0)
+
+	// apply a late signature
+	assert.NoError(l.Apply(&event.Message{Event: ixn2, Signatures: []derivation.Derivation{*sigDer2}}))
+	assert.Equal(3, l.Size())
+	assert.Len(l.Pending, 0)
+	assert.Len(l.EventAt(2).Signatures, 3)
+
+	// 3rd event
+	// event with async signature receipt
+	ixn3, err := event.NewInteractionEvent(
+		event.WithSequence(3),
+		event.WithPrefix(icp.Prefix),
+	)
 	assert.Nil(err)
+	ixn3.PriorEventDigest, err = ixn2.GetDigest()
+	assert.Nil(err)
+
+	// Create double future events
+	// 4.a will insert the first sig
+	// 4.b will finish all necessary sigs first
+	// 4.b will get apply, 4.a will be duplicitous escrowed
+	ixn4a, err := event.NewInteractionEvent(
+		event.WithSequence(4),
+		event.WithPrefix(icp.Prefix),
+	)
+	assert.Nil(err)
+	ixn4a.PriorEventDigest, err = ixn3.GetDigest()
+	assert.Nil(err)
+
+	ixn4b, err := event.NewInteractionEvent(
+		event.WithSequence(4),
+		event.WithPrefix(icp.Prefix),
+		event.WithSeals(event.SealArray{&event.Seal{Root: "asdf"}}),
+	)
+	assert.Nil(err)
+	ixn4b.PriorEventDigest, err = ixn3.GetDigest()
+	assert.Nil(err)
+
+	ser, err = ixn4a.Serialize()
+	assert.Nil(err)
+	_, err = sigDer1.Derive(ser)
+	assert.Nil(err)
+
+	assert.NoError(l.Apply(&event.Message{Event: ixn4a, Signatures: []derivation.Derivation{*sigDer1}}))
+	assert.Equal(3, l.Size())
+	assert.Len(l.Pending, 1)
+
+	ser, err = ixn4b.Serialize()
+	assert.Nil(err)
+	_, err = sigDer1.Derive(ser)
+	assert.Nil(err)
+	_, err = sigDer2.Derive(ser)
+	assert.Nil(err)
+	_, err = sigDer3.Derive(ser)
+	assert.Nil(err)
+
+	assert.NoError(l.Apply(&event.Message{Event: ixn4b, Signatures: []derivation.Derivation{*sigDer1}}))
+	assert.Equal(3, l.Size())
 	assert.Len(l.Pending, 2)
-	assert.Equal(l.Size(), 1)
 
-	// apply Next with only one sig. This should escrow to pending
-	// err = l.Apply(&event.Message{Event: next, Signatures: []derivation.Derivation{*sig}})
-	// assert.Nil(err)
-	// assert.Len(l.Pending, 3)
-	// assert.Len(l.Events, 1)
+	assert.NoError(l.Apply(&event.Message{Event: ixn4b, Signatures: []derivation.Derivation{*sigDer3}}))
+	assert.Equal(3, l.Size())
+	assert.Len(l.Pending, 2)
 
-	// apply next with another sig, this will apply it
-	// this should also apply the pending nextNext event since
-	// next has a threshold of 1 and we already have that many
-	// signatures in escrow. It should also put dupNextNext into the
-	// duplicitous escrow since it arrived after nextNext.
-	// Thus, we should have all 3 events applied and nothing in pending
-	// sig.KeyIndex = 1
-	// err = l.Apply(&event.Message{Event: next, Signatures: []derivation.Derivation{*sig}})
-	// assert.Nil(err)
-	// assert.Len(l.Pending, 0)
-	// if assert.Len(l.Events, 3) {
-	// 	assert.Equal(nextNext, l.Events[2].Event)
-	// }
-	// if assert.Len(l.Duplicitous, 1) {
-	// 	m, err := l.Duplicitous.Get(dupNextNext)
-	// 	assert.Nil(err)
-	// 	assert.Equal(dupNextNext, m.Event)
-	// }
+	// apply 3, 4b should get applied
+	ser, err = ixn3.Serialize()
+	assert.Nil(err)
+	_, err = sigDer1.Derive(ser)
+	assert.Nil(err)
+	_, err = sigDer2.Derive(ser)
+	assert.Nil(err)
+	_, err = sigDer3.Derive(ser)
+	assert.Nil(err)
 
+	assert.NoError(l.Apply(&event.Message{Event: ixn3, Signatures: []derivation.Derivation{*sigDer1, *sigDer2, *sigDer3}}))
+	assert.Equal(5, l.Size())
+	assert.Len(l.Pending, 0)
+	assert.Len(l.Duplicitous, 1)
+	assert.Equal(ixn4b, l.Current())
 }
 
 func TestMergeSignatures(t *testing.T) {

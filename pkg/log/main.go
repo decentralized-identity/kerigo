@@ -233,6 +233,13 @@ func (l *Log) Apply(e *event.Message) error {
 		return nil
 	}
 
+	// if there are no attached signatures to the event ignore
+	// DOS prevention - flooding an escrow with unverifiable events
+	// TODO: currently we are not considering this an error condition, is it?
+	if len(e.Signatures) == 0 {
+		return nil
+	}
+
 	state, err := l.KeyState()
 	if err != nil {
 		return fmt.Errorf("unable to build key state (%s)", err.Error())
@@ -248,13 +255,6 @@ func (l *Log) Apply(e *event.Message) error {
 
 		return l.AddSignatures(e)
 	} else if e.Event.SequenceInt() != state.LastEvent.SequenceInt()+1 {
-		// if there are no attached signatures to the event, we do not escrow
-		// DOS prevention - flooding an escrow with unverifiable events
-		// TODO: currently we are not considering this an error condition, is it?
-		if len(e.Signatures) == 0 {
-			return nil
-		}
-
 		// We just add the event to the pending escrow: we cannot validate the signtures
 		// until we get caught up since any of the previous missing events could be
 		// ROT
@@ -275,7 +275,11 @@ func (l *Log) Apply(e *event.Message) error {
 		err = VerifySigs(state, e)
 	}
 
+	// if there is a problem with the signatures we need to escrow as duplicitous
+	// someone is trying to apply an event that is signed with a bad key
+	// There may need to be additional nuance in this
 	if err != nil {
+		_ = l.Duplicitous.Add(e)
 		return err
 	}
 
@@ -331,7 +335,7 @@ func (l *Log) Apply(e *event.Message) error {
 	}
 	sigs := mergeSignatures(escrowed.Signatures, e.Signatures)
 
-	if current.SigThreshold != nil && !current.SigThreshold.Satisfied(sigs) {
+	if state.SigThreshold != nil && !state.SigThreshold.Satisfied(sigs) {
 		err = l.Pending.Add(e)
 		if err != nil {
 			return fmt.Errorf("unable to escrow event (%s)", err)
@@ -367,13 +371,9 @@ func (l *Log) Apply(e *event.Message) error {
 		// first seen
 		for i := range next {
 			err = l.Apply(next[i])
-			if err == nil {
-				return nil
+			if err != nil {
+				log.Print("Error processing next event = ", err.Error())
 			}
-
-			// there as some other error applying the event to the log
-			// at this point we dump from escrow and continue on
-			_ = l.Pending.Remove(next[i])
 		}
 	}
 
