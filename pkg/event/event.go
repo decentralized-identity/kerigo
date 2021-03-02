@@ -119,6 +119,7 @@ type Event struct {
 	DelegatorSeal     *Seal          `json:"da,omitempty"`
 	LastEvent         *Seal          `json:"e,omitempty"`
 	LastEstablishment *Seal          `json:"ee,omitempty"`
+	_dig              string
 }
 
 // ILK returns the ILK iota value for the event
@@ -270,23 +271,27 @@ func (e *Event) NextDigest(code derivation.Code) (string, error) {
 }
 
 func (e *Event) GetDigest() (string, error) {
-	ser, err := e.Serialize()
-	if err != nil {
-		return "", err
+	if e._dig == "" {
+		ser, err := e.Serialize()
+		if err != nil {
+			return "", err
+		}
+
+		der, err := derivation.New(derivation.WithCode(derivation.Blake3256))
+		if err != nil {
+			return "", err
+		}
+
+		_, err = der.Derive(ser)
+		if err != nil {
+			return "", err
+		}
+
+		pre := prefix.New(der)
+		e._dig = pre.String()
 	}
 
-	der, err := derivation.New(derivation.WithCode(derivation.Blake3256))
-	if err != nil {
-		return "", err
-	}
-
-	_, err = der.Derive(ser)
-	if err != nil {
-		return "", err
-	}
-
-	pre := prefix.New(der)
-	return pre.String(), nil
+	return e._dig, nil
 }
 
 // DefaultVersionString returns a weGetDigestll formated version string

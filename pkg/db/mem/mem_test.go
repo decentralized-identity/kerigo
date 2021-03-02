@@ -47,7 +47,7 @@ func TestLogEvent(t *testing.T) {
 	}
 
 	msg := &event.Message{Event: evt}
-	err := db.LogEvent(msg)
+	err := db.LogEvent(msg, true)
 	assert.NoError(t, err)
 
 	assert.Equal(t, db.LogSize("pre"), 1)
@@ -69,7 +69,7 @@ func TestLogSize(t *testing.T) {
 		Witnesses: []string{"w1"},
 	}
 
-	err := db.LogEvent(&event.Message{Event: evt})
+	err := db.LogEvent(&event.Message{Event: evt}, true)
 	assert.NoError(t, err)
 
 	assert.Equal(t, db.LogSize("pre"), 1)
@@ -80,7 +80,7 @@ func TestLogSize(t *testing.T) {
 		Sequence:  "1",
 	}
 
-	err = db.LogEvent(&event.Message{Event: evt})
+	err = db.LogEvent(&event.Message{Event: evt}, true)
 	require.NoError(t, err)
 
 	assert.Equal(t, db.LogSize("pre"), 2)
@@ -88,7 +88,7 @@ func TestLogSize(t *testing.T) {
 	for i := 2; i < 12; i++ {
 		evt.Sequence = fmt.Sprintf("%x", i)
 
-		err = db.LogEvent(&event.Message{Event: evt})
+		err = db.LogEvent(&event.Message{Event: evt}, true)
 		require.NoError(t, err)
 	}
 
@@ -109,7 +109,7 @@ func TestStreamLog(t *testing.T) {
 		Witnesses: []string{"w1"},
 	}
 
-	err := db.LogEvent(&event.Message{Event: evt})
+	err := db.LogEvent(&event.Message{Event: evt}, true)
 	assert.NoError(t, err)
 
 	assert.Equal(t, db.LogSize("pre"), 1)
@@ -120,7 +120,7 @@ func TestStreamLog(t *testing.T) {
 		Sequence:  "1",
 	}
 
-	err = db.LogEvent(&event.Message{Event: evt})
+	err = db.LogEvent(&event.Message{Event: evt}, true)
 	require.NoError(t, err)
 
 	assert.Equal(t, db.LogSize("pre"), 2)
@@ -128,14 +128,11 @@ func TestStreamLog(t *testing.T) {
 	for i := 2; i < 12; i++ {
 		evt.Sequence = fmt.Sprintf("%x", i)
 
-		err = db.LogEvent(&event.Message{Event: evt})
+		err = db.LogEvent(&event.Message{Event: evt}, true)
 		require.NoError(t, err)
 	}
 
-	count := 0
-	err = db.StreamLog("pre", func(msg *event.Message) {
-		count++
-	})
+	count := db.LogSize("pre")
 
 	assert.NoError(t, err)
 	assert.Equal(t, 12, count)
@@ -154,7 +151,7 @@ func TestStreamEstablisment(t *testing.T) {
 		Witnesses: []string{"w1"},
 	}
 
-	err := db.LogEvent(&event.Message{Event: evt})
+	err := db.LogEvent(&event.Message{Event: evt}, true)
 	assert.NoError(t, err)
 
 	assert.Equal(t, db.LogSize("pre"), 1)
@@ -165,7 +162,7 @@ func TestStreamEstablisment(t *testing.T) {
 		Sequence:  "1",
 	}
 
-	err = db.LogEvent(&event.Message{Event: evt})
+	err = db.LogEvent(&event.Message{Event: evt}, true)
 	require.NoError(t, err)
 
 	assert.Equal(t, db.LogSize("pre"), 2)
@@ -173,7 +170,7 @@ func TestStreamEstablisment(t *testing.T) {
 	for i := 2; i < 4; i++ {
 		evt.Sequence = fmt.Sprintf("%x", i)
 
-		err = db.LogEvent(&event.Message{Event: evt})
+		err = db.LogEvent(&event.Message{Event: evt}, true)
 		require.NoError(t, err)
 	}
 
@@ -186,12 +183,13 @@ func TestStreamEstablisment(t *testing.T) {
 		Next:      "next2",
 		Witnesses: []string{"w1"},
 	}
-	err = db.LogEvent(&event.Message{Event: evt})
+	err = db.LogEvent(&event.Message{Event: evt}, true)
 	require.NoError(t, err)
 
 	count := 0
-	err = db.StreamEstablisment("pre", func(msg *event.Message) {
+	err = db.StreamEstablisment("pre", func(msg *event.Message) error {
 		count++
+		return nil
 	})
 
 	assert.NoError(t, err)
@@ -212,7 +210,7 @@ func TestSeen(t *testing.T) {
 		Witnesses: []string{"w1"},
 	}
 
-	err := db.LogEvent(&event.Message{Event: evt})
+	err := db.LogEvent(&event.Message{Event: evt}, true)
 	assert.NoError(t, err)
 
 	ok := db.Seen("pre")
@@ -235,7 +233,7 @@ func TestInception(t *testing.T) {
 		Witnesses: []string{"w1"},
 	}
 
-	err := db.LogEvent(&event.Message{Event: orig})
+	err := db.LogEvent(&event.Message{Event: orig}, true)
 	assert.NoError(t, err)
 
 	assert.Equal(t, db.LogSize("pre"), 1)
@@ -246,7 +244,7 @@ func TestInception(t *testing.T) {
 		Sequence:  "1",
 	}
 
-	err = db.LogEvent(&event.Message{Event: evt})
+	err = db.LogEvent(&event.Message{Event: evt}, true)
 	require.NoError(t, err)
 
 	evt = &event.Event{
@@ -258,7 +256,7 @@ func TestInception(t *testing.T) {
 		Next:      "next2",
 		Witnesses: []string{"w1"},
 	}
-	err = db.LogEvent(&event.Message{Event: evt})
+	err = db.LogEvent(&event.Message{Event: evt}, true)
 	require.NoError(t, err)
 
 	icp, err := db.Inception("pre")
@@ -279,7 +277,7 @@ func TestCurrentEvent(t *testing.T) {
 		Witnesses: []string{"w1"},
 	}
 
-	err := db.LogEvent(&event.Message{Event: orig})
+	err := db.LogEvent(&event.Message{Event: orig}, true)
 	assert.NoError(t, err)
 
 	assert.Equal(t, db.LogSize("pre"), 1)
@@ -293,7 +291,7 @@ func TestCurrentEvent(t *testing.T) {
 		Witnesses: []string{"w1"},
 	}
 
-	err = db.LogEvent(&event.Message{Event: rot})
+	err = db.LogEvent(&event.Message{Event: rot}, true)
 	require.NoError(t, err)
 
 	evt := &event.Event{
@@ -302,7 +300,7 @@ func TestCurrentEvent(t *testing.T) {
 		EventType: "ixn",
 		Sequence:  "2",
 	}
-	err = db.LogEvent(&event.Message{Event: evt})
+	err = db.LogEvent(&event.Message{Event: evt}, true)
 	require.NoError(t, err)
 
 	cur, err := db.CurrentEvent("pre")
@@ -323,7 +321,7 @@ func TestCurrentEstablishmentEvent(t *testing.T) {
 		Witnesses: []string{"w1"},
 	}
 
-	err := db.LogEvent(&event.Message{Event: orig})
+	err := db.LogEvent(&event.Message{Event: orig}, true)
 	assert.NoError(t, err)
 	assert.Equal(t, db.LogSize("pre"), 1)
 
@@ -337,7 +335,7 @@ func TestCurrentEstablishmentEvent(t *testing.T) {
 		Witnesses: []string{"w1"},
 	}
 
-	err = db.LogEvent(&event.Message{Event: rot})
+	err = db.LogEvent(&event.Message{Event: rot}, true)
 	require.NoError(t, err)
 
 	evt := &event.Event{
@@ -346,7 +344,7 @@ func TestCurrentEstablishmentEvent(t *testing.T) {
 		EventType: "ixn",
 		Sequence:  "2",
 	}
-	err = db.LogEvent(&event.Message{Event: evt})
+	err = db.LogEvent(&event.Message{Event: evt}, true)
 	require.NoError(t, err)
 
 	cur, err := db.CurrentEstablishmentEvent("pre")
@@ -367,7 +365,7 @@ func TestEventAt(t *testing.T) {
 		Witnesses: []string{"w1"},
 	}
 
-	err := db.LogEvent(&event.Message{Event: icp})
+	err := db.LogEvent(&event.Message{Event: icp}, true)
 	assert.NoError(t, err)
 
 	rot := &event.Event{
@@ -380,7 +378,7 @@ func TestEventAt(t *testing.T) {
 		Witnesses: []string{"w1"},
 	}
 
-	err = db.LogEvent(&event.Message{Event: rot})
+	err = db.LogEvent(&event.Message{Event: rot}, true)
 	require.NoError(t, err)
 
 	ixn := &event.Event{
@@ -390,7 +388,7 @@ func TestEventAt(t *testing.T) {
 		Sequence:  "2",
 	}
 
-	err = db.LogEvent(&event.Message{Event: ixn})
+	err = db.LogEvent(&event.Message{Event: ixn}, true)
 	require.NoError(t, err)
 
 	at, err := db.EventAt("pre", 0)

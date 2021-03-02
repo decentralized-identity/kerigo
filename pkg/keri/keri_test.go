@@ -76,8 +76,7 @@ func TestDirectMode(t *testing.T) {
 
 		//Duplicitious events not yet handled
 		msgsToBob, err = eve.ProcessEvents(icp)
-		assert.Error(t, err)
-		assert.Equal(t, "duplicitious events not currently handled", err.Error())
+		assert.NoError(t, err)
 
 		//Send bob's icp to Eve and get back icp and receipt
 		msgsToBob, err = eve.ProcessEvents(rot)
@@ -126,8 +125,7 @@ func TestDirectMode(t *testing.T) {
 
 		//Duplicitious events not yet handled
 		msgsToBob, err = eve.ProcessEvents(icp)
-		assert.Error(t, err)
-		assert.Equal(t, "duplicitious events not currently handled", err.Error())
+		assert.NoError(t, err)
 
 		//Send bob's icp to Eve and get back icp and receipt
 		msgsToBob, err = eve.ProcessEvents(rot)

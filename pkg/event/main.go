@@ -171,7 +171,7 @@ func NewEvent(opts ...EventOption) (*Event, error) {
 	}
 
 	if e.EventType == "" {
-		return nil, errors.New("must sepcify an event type")
+		return nil, errors.New("must specify an event type")
 	}
 
 	if (e.EventType != ilkString[ICP] && e.EventType != ilkString[VRC] && e.EventType != ilkString[RCT]) && e.Sequence == "0" {

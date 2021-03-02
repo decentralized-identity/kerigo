@@ -108,7 +108,7 @@ func FromPrefix(data string) (*Derivation, error) {
 	// that the data is at least that long, we can reference up to [:3] in the prefix
 	// without going out of bounds
 	if len(data) < 4 {
-		return nil, fmt.Errorf("unable to determin derivation (%s)", "invalid prefix length")
+		return nil, fmt.Errorf("unable to determine derivation (%s)", "invalid prefix length")
 	}
 
 	var d *Derivation
