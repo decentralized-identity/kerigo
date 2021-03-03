@@ -1,36 +1,43 @@
 package badger
 
 import (
-	"encoding/json"
+	"bytes"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/dgraph-io/badger"
 	"github.com/pkg/errors"
 
+	"github.com/decentralized-identity/kerigo/pkg/derivation"
 	"github.com/decentralized-identity/kerigo/pkg/event"
 )
 
 const (
-	Evt  = "evt"
-	Raw  = "raw"
-	Fork = "frk"
-	Est  = "est"
-
-	EvtPrefix = "%s{evt}"
-	EstPrefix = "%s{est}"
-
-	EvtKey  = "%s{evt}%032d"
-	RawKey  = "%s{raw}%s"
-	ForkKey = "%s{frk}%032d"
-	EstKey  = "%s{est}%032d"
+	dts = "2006-01-02T15:04:05"
 )
 
 type DB struct {
-	db *badger.DB
+	db   *badger.DB
+	evts *Value      // prefix/digest = raw serialized event
+	fses *Value      // prefix:datetime,monotonically incremented = event digest
+	dtss *Value      // prefix:digest = ISO 8601 date time of event
+	sigs *Set        // prefix:digest = multiple fully qualified event sigs
+	rcts *Set        // prefix:digest = multiple non-transferable receipt couplets
+	vrcs *Set        // prefix:digest = multiple transferable receipt quadlet
+	kels *OrderedSet // prefix:seq no. = multiple ordered event digests as event log
+	estb *OrderedSet // prefix:seq no. = multiple ordered event digests as establishment event log
+	pses *OrderedSet // prefix:seq no. = multiple ordered event digests of partially signed events
+	ooes *Set        // prefix:seq no. = multiple event digests as out of order escrow
+	dels *Set        // prefix:seq no. = multiple event digests as duplicitous log
+	ldes *Set        // prefix:seq no. = multiple event digests as likely duplicitous events
 }
 
 func New(dir string) (*DB, error) {
-	db, err := badger.Open(badger.DefaultOptions(dir))
+	opts := badger.DefaultOptions(dir)
+	opts.Logger = &NoOpLogger{}
+
+	db, err := badger.Open(opts)
 	if err != nil {
 		return nil, errors.Wrapf(err, "unable to open database at %s", dir)
 	}
@@ -38,6 +45,19 @@ func New(dir string) (*DB, error) {
 	out := &DB{
 		db: db,
 	}
+
+	out.evts = NewValue("evts", "/%s/%s")         // prefix/digest = raw serialized event
+	out.fses = NewValue("fses", "/%s/%s.%012d")   // prefix:datetime,monotonically incremented = event digest
+	out.dtss = NewValue("dtss", "/%s/%s")         // prefix:digest = ISO 8601 date time of event
+	out.sigs = NewSet("sigs", "/%s/%s")           // prefix:digest = multiple fully qualified event sigs
+	out.rcts = NewSet("rcts", "/%s/%s")           // prefix:digest = multiple non-transferable receipt couplets
+	out.vrcs = NewSet("vrcs", "/%s/%s")           // prefix:digest = multiple transferable receipt quadlet
+	out.kels = NewOrderedSet("kels", "/%s/%032d") // prefix:seq no. = multiple ordered event digests as event log
+	out.estb = NewOrderedSet("estb", "/%s/%032d") // prefix:seq no. = multiple ordered event digests as establishment event log
+	out.pses = NewOrderedSet("pses", "/%s/%032d") // prefix:seq no. = multiple ordered event digests of partially signed events
+	out.ooes = NewSet("ooes", "/%s/%032d")        // prefix:seq no. = multiple event digests as out of order escrow
+	out.dels = NewSet("dels", "/%s/%032d")        // prefix:seq no. = multiple event digests as duplicitous log
+	out.ldes = NewSet("ldes", "/%s/%032d")        // prefix:seq no. = multiple event digests as likely duplicitous events
 
 	return out, nil
 }
@@ -91,275 +111,488 @@ func (r *DB) Get(k string) ([]byte, error) {
 }
 
 func (r *DB) Seen(pre string) bool {
-	found := false
-	_ = r.db.View(func(txn *badger.Txn) error {
-		evtk := fmt.Sprintf(EvtKey, pre, 0)
-		_, err := txn.Get([]byte(evtk))
-		if err == nil {
-			found = true
+	txn := r.db.NewTransaction(false)
+	defer txn.Discard()
+
+	vals, err := r.kels.Get(txn, pre, 0)
+	return vals != nil && err == nil
+}
+
+func (r *DB) LogEvent(e *event.Message, first bool) error {
+	txn := r.db.NewTransaction(true)
+	defer txn.Discard()
+
+	pre := e.Event.Prefix
+	sn := e.Event.SequenceInt()
+
+	dig, err := e.Event.GetDigest()
+	if err != nil {
+		return err
+	}
+
+	now := time.Now()
+	dts := now.Format(dts)
+
+	if first {
+		err = r.dtss.Set(txn, []byte(dts), pre, dig)
+		if err != nil {
+			return err
 		}
-		return nil
-	})
-
-	return found
-}
-
-func (r *DB) ForkEvent(e *event.Message) error {
-	if e.Event.ILK() != event.IXN {
-		return errors.New("only IXN events can be forked")
+	} else {
+		err = r.dtss.Put(txn, []byte(dts), pre, dig)
+		if err != nil {
+			return err
+		}
 	}
 
-	txn := r.db.NewTransaction(true)
-	defer txn.Discard()
-
-	pre := e.Event.Prefix
-	sn := e.Event.SequenceInt()
-	dig, err := e.Event.GetDigest()
-	if err != nil {
-		return errors.Wrap(err, "store event error, unable to get event digest")
+	for _, sig := range e.Signatures {
+		sigp := sig.AsPrefix()
+		err = r.sigs.Add(txn, []byte(sigp), pre, dig)
+		if err != nil {
+			return err
+		}
 	}
 
-	evtk := fmt.Sprintf(EvtKey, pre, sn)
-	err = txn.Delete([]byte(evtk))
-	if err == nil {
-		return fmt.Errorf("event doesn't exist for %s at %d", pre, sn)
-	}
-
-	frk := fmt.Sprintf(ForkKey, pre, sn)
-	err = txn.Set([]byte(frk), []byte(dig))
+	ser, err := e.Event.Serialize()
 	if err != nil {
 		return err
 	}
 
-	//TODO: move any trailing events off the log and into the forked branch
-
-	return txn.Commit()
-}
-
-func (r *DB) LogEvent(e *event.Message) error {
-	txn := r.db.NewTransaction(true)
-	defer txn.Discard()
-
-	pre := e.Event.Prefix
-	sn := e.Event.SequenceInt()
-	dig, err := e.Event.GetDigest()
-	if err != nil {
-		return errors.Wrap(err, "store event error, unable to get event digest")
-	}
-
-	evtk := fmt.Sprintf(EvtKey, pre, sn)
-	_, err = txn.Get([]byte(evtk))
-	if err == nil {
-		return fmt.Errorf("fork error, event already exists for %s at %d", pre, sn)
-	}
-
-	rawk := fmt.Sprintf(RawKey, pre, dig)
-	v, err := json.Marshal(e)
-	if err != nil {
-		return errors.Wrap(err, "unable to [cbor] serialize event to store")
-	}
-
-	err = txn.Set([]byte(rawk), v)
+	err = r.evts.Set(txn, ser, pre, dig)
 	if err != nil {
 		return err
 	}
 
-	err = txn.Set([]byte(evtk), []byte(dig))
+	err = r.kels.Add(txn, []byte(dig), pre, sn)
 	if err != nil {
 		return err
 	}
 
 	if e.Event.IsEstablishment() {
-		estk := fmt.Sprintf(EstKey, pre, sn)
-		err = txn.Set([]byte(estk), []byte(dig))
+		err = r.estb.Add(txn, []byte(dig), pre, sn)
 		if err != nil {
 			return err
 		}
+	}
+
+	err = r.fses.Set(txn, []byte(dig), pre, dts, now.Nanosecond())
+	if err != nil {
+		return err
 	}
 
 	return txn.Commit()
 }
 
 func (r *DB) LogSize(pre string) int {
-	count := 0
-	err := r.db.View(func(txn *badger.Txn) error {
-		opts := badger.DefaultIteratorOptions
-		opts.Prefix = []byte(fmt.Sprintf(EvtPrefix, pre))
-		opts.PrefetchValues = false
+	txn := r.db.NewTransaction(true)
+	defer txn.Discard()
 
-		it := txn.NewIterator(opts)
-		defer it.Close()
-		for it.Rewind(); it.Valid(); it.Next() {
-			count++
+	return r.kels.Count(txn, pre)
+}
+
+func (r *DB) StreamAsFirstSeen(pre string, handler func(*event.Message) error) error {
+	txn := r.db.NewTransaction(false)
+	defer txn.Discard()
+
+	it := r.fses.Iterator(txn, pre)
+	defer it.Close()
+
+	for it.Next() {
+		dig := it.Value()
+		msg, err := r.message(txn, pre, string(dig))
+		if err != nil {
+			return errors.Wrap(err, "")
 		}
-
-		return nil
-	})
-
-	if err != nil {
-		return 0
+		err = handler(msg)
+		if err != nil {
+			return err
+		}
 	}
 
-	return count
+	return nil
 }
 
-func (r *DB) StreamLog(pre string, handler func(*event.Message)) error {
-	return r.streamLog(pre, Evt, handler)
+func (r *DB) StreamBySequenceNo(pre string, handler func(*event.Message) error) error {
+	txn := r.db.NewTransaction(false)
+	defer txn.Discard()
+
+	it := r.kels.Iterator(txn, pre)
+	defer it.Close()
+
+	fork := []byte{}
+	for it.Next() {
+		digs := it.Value()
+
+		dig := digs[len(digs)-1]
+		msg, err := r.message(txn, pre, string(dig))
+		if err != nil {
+			return errors.Wrap(err, "")
+		}
+
+		if len(fork) != 0 {
+			if bytes.Compare([]byte(msg.Event.PriorEventDigest), fork) != 0 {
+				break
+			}
+		}
+
+		if len(digs) > 1 {
+			fork = dig
+		} else {
+			fork = []byte{}
+		}
+
+		err = handler(msg)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
-func (r *DB) StreamForks(pre string, handler func(*event.Message)) error {
-	return r.streamLog(pre, Fork, handler)
-}
+func (r *DB) StreamPending(pre string, handler func(*event.Message) error) error {
+	txn := r.db.NewTransaction(false)
+	defer txn.Discard()
 
-func (r *DB) StreamEstablisment(pre string, handler func(*event.Message)) error {
-	return r.streamLog(pre, Est, handler)
-}
+	it := r.pses.Iterator(txn, pre)
+	defer it.Close()
 
-func (r *DB) streamLog(pre, typ string, handler func(*event.Message)) error {
-	err := r.db.View(func(txn *badger.Txn) error {
-		opts := badger.DefaultIteratorOptions
-		opts.Prefix = []byte(fmt.Sprintf("%s{%s}", pre, typ))
-
-		it := txn.NewIterator(opts)
-		defer it.Close()
-
-		for it.Rewind(); it.Valid(); it.Next() {
-			item := it.Item()
-
-			var msg *event.Message
-			err := item.Value(func(dig []byte) error {
-				var err error
-				msg, err = r.loadRawEvent(pre, string(dig), txn)
-
-				return err
-			})
-
+	for it.Next() {
+		digs := it.Value()
+		for _, dig := range digs {
+			msg, err := r.message(txn, pre, string(dig))
 			if err != nil {
 				return errors.Wrap(err, "")
 			}
-
-			handler(msg)
+			err = handler(msg)
+			if err != nil {
+				return err
+			}
 		}
+	}
 
-		return nil
-	})
+	return nil
+}
 
-	if err != nil {
-		return errors.Wrapf(err, "error streaming log for %s", pre)
+func (r *DB) StreamEstablisment(pre string, handler func(*event.Message) error) error {
+	txn := r.db.NewTransaction(false)
+	defer txn.Discard()
+
+	it := r.estb.Iterator(txn, pre)
+	defer it.Close()
+
+	for it.Next() {
+		digs := it.Value()
+		msg, err := r.message(txn, pre, string(digs[0]))
+		if err != nil {
+			return errors.Wrap(err, "")
+		}
+		err = handler(msg)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
 func (r *DB) CurrentEvent(pre string) (*event.Message, error) {
-	return r.distalEvt(pre, Evt, true)
+	txn := r.db.NewTransaction(false)
+	defer txn.Discard()
+
+	dig, err := r.fses.Last(txn, pre)
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to get last event digest")
+	}
+	return r.message(txn, pre, string(dig))
 }
 
 func (r *DB) CurrentEstablishmentEvent(pre string) (*event.Message, error) {
-	return r.distalEvt(pre, Est, true)
+	txn := r.db.NewTransaction(false)
+	defer txn.Discard()
+
+	digs, err := r.estb.Last(txn, pre)
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to get last event digest")
+	}
+
+	return r.message(txn, pre, string(digs[len(digs)-1]))
 }
 
 func (r *DB) Inception(pre string) (*event.Message, error) {
-	evt, err := r.distalEvt(pre, Evt, false)
+	return r.EventAt(pre, 0)
+}
+
+func (r *DB) Signatures(pre, dig string) ([]derivation.Derivation, error) {
+	txn := r.db.NewTransaction(false)
+	defer txn.Discard()
+	return r.signatures(txn, pre, dig)
+}
+
+func (r *DB) signatures(txn *badger.Txn, pre, dig string) ([]derivation.Derivation, error) {
+	s, err := r.sigs.Get(txn, pre, dig)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "unable to get signatures")
 	}
 
-	if evt.Event.ILK() != event.ICP {
-		return nil, errors.New("invalid log state, first event is not ICP")
+	out := make([]derivation.Derivation, len(s))
+	for i, b := range s {
+		der, err := derivation.FromAttachedSignature(string(b))
+		if err != nil {
+			return nil, errors.Wrap(err, "invalid derivation")
+		}
+		out[i] = *der
+	}
+
+	return out, nil
+}
+
+func (r *DB) Event(pre, dig string) (*event.Event, error) {
+	txn := r.db.NewTransaction(false)
+	defer txn.Discard()
+	return r.event(txn, pre, dig)
+}
+
+func (r *DB) event(txn *badger.Txn, pre, dig string) (*event.Event, error) {
+	d, err := r.evts.Get(txn, pre, dig)
+	if err != nil {
+		return nil, errors.Wrap(err, "raw event not found")
+	}
+
+	evt, err := event.Deserialize(d, event.JSON)
+	if err != nil {
+		return nil, errors.Wrap(err, "invalid data stored at raw event")
 	}
 
 	return evt, nil
+}
+
+func (r *DB) Message(pre, dig string) (*event.Message, error) {
+	txn := r.db.NewTransaction(false)
+	defer txn.Discard()
+	return r.message(txn, pre, dig)
+}
+
+func (r *DB) message(txn *badger.Txn, pre, dig string) (*event.Message, error) {
+	evt, err := r.event(txn, pre, dig)
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to load raw event")
+	}
+
+	sigs, err := r.signatures(txn, pre, dig)
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to load signatures")
+	}
+
+	return &event.Message{
+		Event:      evt,
+		Signatures: sigs,
+	}, nil
 }
 
 func (r *DB) EventAt(pre string, sn int) (*event.Message, error) {
 	txn := r.db.NewTransaction(false)
 	defer txn.Discard()
 
-	evtk := fmt.Sprintf(EvtKey, pre, sn)
-	item, err := txn.Get([]byte(evtk))
-	if err != nil {
-		return nil, errors.Wrapf(err, "no event for %s at %d", pre, sn)
+	d, err := r.kels.Get(txn, pre, sn)
+	if err != nil || len(d) != 1 {
+		return nil, errors.New("multiple inception events for log")
 	}
 
-	var msg *event.Message
-	err = item.Value(func(dig []byte) error {
-		var err error
-		msg, err = r.loadRawEvent(pre, string(dig), txn)
-
-		return err
-	})
-
-	if err != nil {
-		return nil, errors.Wrap(err, "unable to load raw event")
-	}
-
-	return msg, nil
-
+	dig := string(d[0])
+	return r.message(txn, pre, dig)
 }
 
-func (r *DB) distalEvt(pre, typ string, reverse bool) (*event.Message, error) {
-	txn := r.db.NewTransaction(false)
+func (r *DB) EscrowPendingEvent(e *event.Message) error {
+	txn := r.db.NewTransaction(true)
 	defer txn.Discard()
 
-	opts := badger.DefaultIteratorOptions
-	opts.Reverse = reverse
-
-	it := txn.NewIterator(opts)
-	defer it.Close()
-
-	seek := fmt.Sprintf("%s{%s}", pre, typ)
-	if reverse {
-		seek += "~"
-	}
-
-	it.Rewind()
-	it.Seek([]byte(seek))
-	if !it.Valid() {
-		return nil, errors.New("not found")
-	}
-
-	item := it.Item()
-
-	var msg *event.Message
-	err := item.Value(func(dig []byte) error {
-		var err error
-		msg, err = r.loadRawEvent(pre, string(dig), txn)
-
+	pre := e.Event.Prefix
+	dig, err := e.Event.GetDigest()
+	if err != nil {
 		return err
-	})
-
-	if err != nil {
-		return nil, errors.Wrap(err, "unable to load raw event")
 	}
 
-	return msg, err
+	dts := time.Now().Format(time.RFC3339)
 
-}
-
-func (r *DB) loadRawEvent(pre, dig string, txn *badger.Txn) (*event.Message, error) {
-	rawk := fmt.Sprintf(RawKey, pre, dig)
-
-	item, err := txn.Get([]byte(rawk))
+	err = r.dtss.Put(txn, []byte(dts), pre, dig)
 	if err != nil {
-		return nil, errors.Wrapf(err, "unable to get raw event: %s", rawk)
+		return err
 	}
 
-	msg := &event.Message{Event: &event.Event{Config: nil}}
-
-	err = item.Value(func(val []byte) error {
-		err = json.Unmarshal(val, msg)
+	for _, sig := range e.Signatures {
+		sigp := sig.AsPrefix()
+		err = r.sigs.Add(txn, []byte(sigp), pre, dig)
 		if err != nil {
 			return err
 		}
-
-		return nil
-	})
-
-	if err != nil {
-		return nil, errors.Wrap(err, "unable to marshal raw event")
 	}
 
-	return msg, nil
+	ser, err := e.Event.Serialize()
+	if err != nil {
+		return err
+	}
 
+	err = r.evts.Set(txn, ser, pre, dig)
+	if err != nil {
+		return err
+	}
+
+	err = r.pses.Add(txn, []byte(dig), pre, e.Event.SequenceInt())
+	if err != nil {
+		return err
+	}
+
+	return txn.Commit()
+}
+
+func (r *DB) RemovePendingEscrow(prefix string, sn int, dig string) error {
+	txn := r.db.NewTransaction(true)
+	defer txn.Discard()
+
+	err := r.pses.RemoveFromSet(txn, []byte(dig), prefix, sn)
+	if err != nil {
+		return err
+	}
+
+	return txn.Commit()
+}
+
+func (r *DB) EscrowOutOfOrderEvent(e *event.Message) error {
+	txn := r.db.NewTransaction(true)
+	defer txn.Discard()
+
+	pre := e.Event.Prefix
+	dig, err := e.Event.GetDigest()
+	if err != nil {
+		return err
+	}
+
+	dts := time.Now().Format(time.RFC3339)
+
+	err = r.dtss.Put(txn, []byte(dts), pre, dig)
+	if err != nil {
+		return err
+	}
+
+	for _, sig := range e.Signatures {
+		sigp := sig.AsPrefix()
+		err = r.sigs.Add(txn, []byte(sigp), pre, dig)
+		if err != nil {
+			return err
+		}
+	}
+
+	ser, err := e.Event.Serialize()
+	if err != nil {
+		return err
+	}
+
+	err = r.evts.Set(txn, ser, pre, dig)
+	if err != nil {
+		return err
+	}
+
+	err = r.ooes.Add(txn, []byte(dig), pre, e.Event.SequenceInt())
+	if err != nil {
+		return err
+	}
+
+	return txn.Commit()
+}
+
+func (r *DB) EscrowLikelyDuplicitiousEvent(e *event.Message) error {
+	txn := r.db.NewTransaction(true)
+	defer txn.Discard()
+
+	pre := e.Event.Prefix
+	dig, err := e.Event.GetDigest()
+	if err != nil {
+		return err
+	}
+
+	dts := time.Now().Format(time.RFC3339)
+
+	err = r.dtss.Put(txn, []byte(dts), pre, dig)
+	if err != nil {
+		return err
+	}
+
+	for _, sig := range e.Signatures {
+		sigp := sig.AsPrefix()
+		err = r.sigs.Add(txn, []byte(sigp), pre, dig)
+		if err != nil {
+			return err
+		}
+	}
+
+	ser, err := e.Event.Serialize()
+	if err != nil {
+		return err
+	}
+
+	err = r.evts.Set(txn, ser, pre, dig)
+	if err != nil {
+		return err
+	}
+
+	err = r.ldes.Add(txn, []byte(dig), pre, e.Event.SequenceInt())
+	if err != nil {
+		return err
+	}
+
+	return txn.Commit()
+}
+
+func (r *DB) LastAcceptedDigest(pre string, seq int) ([]byte, error) {
+	txn := r.db.NewTransaction(false)
+	defer txn.Discard()
+
+	vals, err := r.kels.Last(txn, pre, seq)
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to get last event")
+	}
+
+	if len(vals) == 0 {
+		return nil, errors.New("not found")
+	}
+
+	return vals[len(vals)-1], nil
+}
+
+func (r *DB) LogTransferableReceipt(vrc *event.Event, sig derivation.Derivation) error {
+	txn := r.db.NewTransaction(true)
+	defer txn.Discard()
+
+	pre := vrc.Prefix
+	sn := vrc.SequenceInt()
+
+	seal := vrc.Seals[0]
+	quadlet := strings.Join([]string{seal.Prefix, fmt.Sprintf("%024d", seal.SequenceInt()), seal.Digest, sig.AsPrefix()}, "")
+
+	err := r.vrcs.Add(txn, []byte(quadlet), pre, sn)
+	if err != nil {
+		return err
+	}
+
+	return txn.Commit()
+}
+
+func (r *DB) StreamTransferableReceipts(pre string, sn int, handler func(quadlet []byte) error) error {
+	txn := r.db.NewTransaction(false)
+	defer txn.Discard()
+
+	vals, err := r.vrcs.Get(txn, pre, sn)
+	if err != nil {
+		return errors.New("not found")
+	}
+
+	for _, val := range vals {
+		err = handler(val)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

@@ -2,13 +2,10 @@ package log
 
 import (
 	"bytes"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
-	"sort"
-	"strconv"
-	"time"
+
+	"github.com/pkg/errors"
 
 	"github.com/decentralized-identity/kerigo/pkg/db"
 	"github.com/decentralized-identity/kerigo/pkg/derivation"
@@ -17,40 +14,14 @@ import (
 
 // Log contains the Key Event Log for a given identifier
 type Log struct {
-	db          db.DB
-	prefix      string
-	Receipts    Register // receipts for Events
-	Pending     Escrow   // pending events
-	Duplicitous Escrow   // escrow of duplicitous events
-}
-
-// BySequence implements the sort.Inteface for log events
-type BySequence []*event.Message
-
-func (a BySequence) Len() int      { return len(a) }
-func (a BySequence) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
-func (a BySequence) Less(i, j int) bool {
-	iS, _ := strconv.ParseInt(a[i].Event.Sequence, 16, 64)
-	jS, _ := strconv.ParseInt(a[j].Event.Sequence, 16, 64)
-	return iS < jS
-}
-
-// ByDate implements the sort.Interface for log events
-type ByDate []*event.Message
-
-func (a ByDate) Len() int      { return len(a) }
-func (a ByDate) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
-func (a ByDate) Less(i, j int) bool {
-	return a[i].Seen.Before(a[j].Seen)
+	db     db.DB
+	prefix string
 }
 
 func New(prefix string, db db.DB) *Log {
 	return &Log{
-		db:          db,
-		prefix:      prefix,
-		Pending:     map[string]*event.Message{},
-		Duplicitous: map[string]*event.Message{},
-		Receipts:    Register{},
+		db:     db,
+		prefix: prefix,
 	}
 }
 
@@ -101,8 +72,9 @@ func (l *Log) CurrentEstablishment() *event.Event {
 func (l *Log) EstablishmentEvents() []*event.Event {
 	var est []*event.Event
 
-	err := l.db.StreamEstablisment(l.prefix, func(evt *event.Message) {
+	err := l.db.StreamEstablisment(l.prefix, func(evt *event.Message) error {
 		est = append(est, evt.Event)
+		return nil
 	})
 
 	if err != nil {
@@ -125,7 +97,7 @@ func (l *Log) KeyState() (*event.Event, error) {
 	var kst *event.Event
 	var last *event.Event
 
-	err := l.db.StreamEstablisment(l.prefix, func(msg *event.Message) {
+	err := l.db.StreamEstablisment(l.prefix, func(msg *event.Message) error {
 		e := msg.Event
 		if kst == nil {
 			kst = &event.Event{}
@@ -168,10 +140,15 @@ func (l *Log) KeyState() (*event.Event, error) {
 		}
 
 		last = e
+		return nil
 	})
 
 	if err != nil {
 		return nil, fmt.Errorf("error processing log stream (%s)", err.Error())
+	}
+
+	if kst == nil {
+		return &event.Event{}, nil
 	}
 
 	// key state events don't need the sequence number
@@ -214,25 +191,6 @@ func (l *Log) Apply(e *event.Message) error {
 		return errors.New("invalid event for this log")
 	}
 
-	// mark the event as seen
-	if e.Seen.IsZero() {
-		e.Seen = time.Now().UTC()
-	}
-
-	if l.db.LogSize(l.prefix) == 0 {
-		if e.Event.EventType != event.ICP.String() {
-			return errors.New("first event in an empty log must be an inception event")
-		}
-
-		l.prefix = e.Event.Prefix
-		err := l.db.LogEvent(e)
-		if err != nil {
-			return err
-		}
-		//l.Events = append(l.Events, e)
-		return nil
-	}
-
 	// if there are no attached signatures to the event ignore
 	// DOS prevention - flooding an escrow with unverifiable events
 	// TODO: currently we are not considering this an error condition, is it?
@@ -240,153 +198,157 @@ func (l *Log) Apply(e *event.Message) error {
 		return nil
 	}
 
+	ilk := e.Event.ILK()
 	state, err := l.KeyState()
 	if err != nil {
 		return fmt.Errorf("unable to build key state (%s)", err.Error())
 	}
 
-	// add the signature to already applied event
-	if e.Event.SequenceInt() <= state.LastEvent.SequenceInt() {
-		// TODO: an edge case - you will need to validate
-		// the signatures AS OF the key state that was valid for this event seq
-		// so, for example, if this is for seq 7, then 8 was a valid ROT, you could still
-		// collect valid sigs for seq 7, but the would no longer be valid as of the current
-		// key state message (since it takes into account ROT at 8)
+	if l.db.LogSize(l.prefix) == 0 {
+		if ilk == event.ICP || ilk == event.DIP {
+			l.prefix = e.Event.Prefix
 
-		return l.AddSignatures(e)
-	} else if e.Event.SequenceInt() != state.LastEvent.SequenceInt()+1 {
-		// We just add the event to the pending escrow: we cannot validate the signtures
-		// until we get caught up since any of the previous missing events could be
-		// ROT
-		err := l.Pending.Add(e)
-		if err != nil {
-			return fmt.Errorf("unable to escrow event (%s)", err)
-		}
-
-		return nil
-	}
-
-	// verify the signatures for this event
-	// Two paths: if this is a ROT event, we use the current keys
-	// if this is any other type, we use the key state
-	if e.Event.EventType == event.ROT.String() {
-		err = VerifySigs(e.Event, e)
-	} else {
-		err = VerifySigs(state, e)
-	}
-
-	// if there is a problem with the signatures we need to escrow as duplicitous
-	// someone is trying to apply an event that is signed with a bad key
-	// There may need to be additional nuance in this
-	if err != nil {
-		_ = l.Duplicitous.Add(e)
-		return err
-	}
-
-	// if this is a rotation event, we must validate the next keys
-	if e.Event.ILK() == event.ROT {
-		// the latest establishment event has the current Next digest
-		lastEstablisment := l.EventAt(state.LastEstablishment.SequenceInt())
-		lastNextDig, err := derivation.FromPrefix(lastEstablisment.Event.Next)
-		if err != nil {
-			return fmt.Errorf("unable to parse next digest from last establishment event (%s)", err.Error())
-		}
-
-		// calculate the next digest based on the current keys/signing threshold
-		nextDig, err := e.Event.NextDigest(lastNextDig.Code)
-		if err != nil {
-			return fmt.Errorf("unable to parse next digest event (%s)", err.Error())
-		}
-
-		// this should match what was stored in the last establishment
-		if nextDig != lastNextDig.AsPrefix() {
-			return errors.New("next digest invalid")
-		}
-	}
-
-	// to support digest agility, we allow the current event to dictate what
-	// digest they want to use for the prior event
-	inDerivation, err := derivation.FromPrefix(e.Event.PriorEventDigest)
-	if err != nil {
-		return fmt.Errorf("unable to determine digest derivation (%s)", err)
-	}
-
-	current := l.Current()
-	curSerialized, err := current.Serialize()
-	if err != nil {
-		return fmt.Errorf("unable to serialize current event (%s)", err)
-	}
-
-	curDigest, err := event.Digest(curSerialized, inDerivation.Code)
-	if err != nil {
-		return fmt.Errorf("unable to digest current event (%s)", err)
-	}
-
-	if !bytes.Equal(curDigest, inDerivation.Raw) {
-		// someone has tried to add an invalid event to the log
-		_ = l.Duplicitous.Add(e)
-		return errors.New("invalid digest for new event")
-	}
-
-	// if the sig threshold is not met escrow
-	escrowed, err := l.Pending.Get(e.Event)
-	if err != nil {
-		return fmt.Errorf("unable to retrieve escrowed messages (%s)", err)
-	}
-	sigs := mergeSignatures(escrowed.Signatures, e.Signatures)
-
-	if state.SigThreshold != nil && !state.SigThreshold.Satisfied(sigs) {
-		err = l.Pending.Add(e)
-		if err != nil {
-			return fmt.Errorf("unable to escrow event (%s)", err)
-		}
-
-		return nil
-	}
-
-	err = l.db.LogEvent(&event.Message{Event: e.Event, Signatures: sigs})
-	if err != nil {
-		return err
-	}
-
-	dups, err := l.Pending.Clear(*e.Event)
-	// we currently do not consider any of these errors that need to be addressed
-	// TODO: handle
-	if err == nil {
-		for i := range dups {
-			_ = l.Duplicitous.Add(dups[i])
-		}
-	}
-
-	// go through the pending events and apply any that are now "current"
-	current = l.Current()
-	next := l.Pending.ForSequence(current.SequenceInt() + 1)
-	if len(next) > 0 {
-		sort.Sort(ByDate(next))
-		// we iterate over the events, sorted by first received.
-		// if an event is applied any others are moved to the
-		// duplicitous escrow, so we can just return
-		// if the event is still waiting for additional signatures
-		// it will remain in escrow, and we can return (since it was)
-		// first seen
-		for i := range next {
-			err = l.Apply(next[i])
+			err := l.validateSigs(e.Event, e)
 			if err != nil {
-				log.Print("Error processing next event = ", err.Error())
+				return err
 			}
+
+			return l.db.LogEvent(e, true)
+		} else {
+			return l.db.EscrowOutOfOrderEvent(e)
 		}
 	}
 
-	b, _ := json.Marshal(e.Event)
-	log.Print("Added valid event to KEL event = ", string(b), "\n\n")
+	sn := e.Event.SequenceInt()
+	dig, _ := e.Event.GetDigest()
+	lastsn := state.LastEvent.SequenceInt()
+	nextsn := lastsn + 1
+
+	if ilk == event.ICP || ilk == event.DIP {
+		if sn != 0 {
+			return fmt.Errorf("invalid sequence number %d for ICP event", sn)
+		}
+
+		latestEst, err := l.db.CurrentEstablishmentEvent(l.prefix)
+		if err != nil {
+			return err
+		}
+
+		latestDig, _ := latestEst.Event.GetDigest()
+
+		if dig != latestDig {
+			_ = l.db.EscrowLikelyDuplicitiousEvent(e)
+			return errors.New("likely duplictious ICP event")
+		}
+
+		err = l.VerifySigs(state, e)
+		if err != nil {
+			return err
+		}
+
+		//duplicate inception we've already seen, add any additional signatures
+		return l.db.LogEvent(e, true)
+	}
+
+	// ROT, DRT or IXN
+	if sn > nextsn {
+		//Our of order event
+		return l.db.EscrowOutOfOrderEvent(e)
+	} else if sn == nextsn || ((ilk == event.ROT || ilk == event.DRT) && (lastsn < sn || lastsn <= nextsn)) {
+		// In order event or recovery event
+		// to support digest agility, we allow the current event to dictate what
+		// digest they want to use for the prior event
+		inDerivation, err := derivation.FromPrefix(e.Event.PriorEventDigest)
+		if err != nil {
+			return fmt.Errorf("unable to determine digest derivation (%s)", err)
+		}
+
+		current := l.Current()
+		curSerialized, err := current.Serialize()
+		if err != nil {
+			return fmt.Errorf("unable to serialize current event (%s)", err)
+		}
+
+		curDigest, err := event.Digest(curSerialized, inDerivation.Code)
+		if err != nil {
+			return fmt.Errorf("unable to digest current event (%s)", err)
+		}
+
+		if !bytes.Equal(curDigest, inDerivation.Raw) {
+			// someone has tried to add an invalid event to the log
+			_ = l.db.EscrowLikelyDuplicitiousEvent(e)
+			return errors.New("invalid digest for new event")
+		}
+
+		err = l.updateState(state, e)
+		if err != nil {
+			return err
+		}
+
+	} else {
+		// possibly duplilcate
+		latestDig, err := l.db.LastAcceptedDigest(l.prefix, sn)
+		if err != nil {
+			return err
+		}
+
+		if dig != string(latestDig) {
+			_ = l.db.EscrowLikelyDuplicitiousEvent(e)
+			return errors.New("likely duplictious event")
+		}
+
+		err = l.VerifySigs(state, e)
+		if err != nil {
+			return err
+		}
+
+		//Already seen, log any additional signatures
+		err = l.db.LogEvent(e, true)
+		if err != nil {
+			return err
+		}
+
+	}
+
+	err = l.db.StreamPending(l.prefix, func(esc *event.Message) error {
+		dig, _ := esc.Event.GetDigest()
+		sn := esc.Event.SequenceInt()
+
+		err = l.Apply(esc)
+		if err != nil {
+			log.Println("error processing escrowed event", dig)
+			return nil
+		}
+
+		err = l.db.RemovePendingEscrow(l.prefix, sn, dig)
+		if err != nil {
+			log.Println("error removing pending escrowed item", dig)
+			return nil
+		}
+
+		return nil
+	})
+
+	//b, _ := json.Marshal(e.Event)
+	//log.Print("Added valid event to KEL event = ", string(b), "\n\n")
 
 	return nil
 }
 
 func (l *Log) ApplyReceipt(vrc *event.Message) error {
-	err := l.Receipts.Add(vrc)
-	if err != nil {
-		return err
+
+	for _, sig := range vrc.Signatures {
+
+		//TODO:  Verify receipt sig
+		//err = receiptorKEL.Verify(vrc)
+		//if err != nil {
+		//	return errors.Wrap(err, "unable to verify vrc signatures")
+		//}
+
+		err := l.db.LogTransferableReceipt(vrc.Event, sig)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -394,7 +356,7 @@ func (l *Log) ApplyReceipt(vrc *event.Message) error {
 
 // VerifySigs takes the current log key state and an event message
 // and validates the attached signatures
-func VerifySigs(state *event.Event, m *event.Message) error {
+func (l *Log) VerifySigs(state *event.Event, m *event.Message) error {
 	mRaw, err := m.Event.Serialize()
 	if err != nil {
 		return err
@@ -412,84 +374,77 @@ func VerifySigs(state *event.Event, m *event.Message) error {
 
 		err = derivation.VerifyWithAttachedSignature(keyD, &sig, mRaw)
 		if err != nil {
-			return fmt.Errorf("Invalid signature for key at index %d", sig.KeyIndex)
+			panic(fmt.Errorf("invalid signature for key at index %d", sig.KeyIndex))
 		}
 	}
 
 	return nil
 }
 
-// Verify the event signatures against the current log
-// establishment event
-// TODO: do we need this?
-func (l *Log) Verify(m *event.Message) error {
-	if l.db.LogSize(l.prefix) == 0 {
-		if m.Event.EventType != event.ICP.String() {
-			return errors.New("first event in an empty log must be an inception event")
+func (l *Log) validateSigs(state *event.Event, m *event.Message) error {
+	err := l.VerifySigs(state, m)
+	if err != nil {
+		return err
+	}
+
+	if state.SigThreshold != nil && !state.SigThreshold.Satisfied(m.Signatures) {
+		err := l.db.EscrowPendingEvent(m)
+		if err != nil {
+			return fmt.Errorf("unable to escrow event (%s)", err)
 		}
-		// If this is the first event in a log there is nothing to verify
+
+		return errors.New("signature threshold not met, event added to pending escrow")
+	}
+
+	return nil
+}
+
+func (l *Log) ReceiptsForEvent(evt *event.Event) [][]byte {
+	out := [][]byte{}
+
+	_ = l.db.StreamTransferableReceipts(evt.Prefix, evt.SequenceInt(), func(q []byte) error {
+		out = append(out, q)
 		return nil
-	}
+	})
 
-	state, err := l.KeyState()
-	if err != nil {
-		return fmt.Errorf("unable to build state (%s)", err.Error())
-	}
-
-	// if we are rotating, the event will be signed using the keys included in the
-	// rotation event.
-	if m.Event.EventType == event.ROT.String() {
-		state = m.Event
-	}
-
-	return VerifySigs(state, m)
+	return out
 }
 
-func (l *Log) ReceiptsForEvent(evt *event.Event) []*event.Message {
-	dig, _ := evt.GetDigest()
-	rcpts := l.Receipts[dig]
-	return rcpts
-}
+func (l *Log) updateState(state *event.Event, e *event.Message) error {
+	ilk := e.Event.ILK()
 
-// AddSignatures takes an event message (event + attached signatures) and attempts
-// to merge the signatures into the log for the event. If the provided event does
-// not match the event already in the KEL it is escrowed as a duplicitous event
-func (l *Log) AddSignatures(e *event.Message) error {
-	ext := l.EventAt(e.Event.SequenceInt())
-	if ext == nil {
-		return fmt.Errorf("unable to locate existing event for sequence %s", e.Event.Sequence)
+	if ilk == event.ROT || ilk == event.DRT {
+		// the latest establishment event has the current Next digest
+		lastEstablisment := l.EventAt(state.LastEstablishment.SequenceInt())
+		lastNextDig, err := derivation.FromPrefix(lastEstablisment.Event.Next)
+		if err != nil {
+			return fmt.Errorf("unable to parse next digest from last establishment event (%s)", err.Error())
+		}
+
+		// calculate the next digest based on the current keys/signing threshold
+		nextDig, err := e.Event.NextDigest(lastNextDig.Code)
+		if err != nil {
+			return fmt.Errorf("unable to parse next digest event (%s)", err.Error())
+		}
+
+		// this should match what was stored in the last establishment
+		if nextDig != lastNextDig.AsPrefix() {
+			return errors.New("next digest invalid")
+		}
+
+		err = l.validateSigs(e.Event, e)
+		if err != nil {
+			return err
+		}
+
+	} else {
+		err := l.validateSigs(state, e)
+		if err != nil {
+			return err
+		}
 	}
 
-	extSerialized, err := ext.Event.Serialize()
-	if err != nil {
-		return fmt.Errorf("unable to add signature to existing event (could not serialize existing event: %s)", err)
-	}
-
-	extDigest, err := event.DigestString(extSerialized, derivation.Blake3256)
-	if err != nil {
-		return fmt.Errorf("unable to add signature to existing event (could not digest existing event: %s)", err)
-	}
-
-	newSerialized, err := e.Event.Serialize()
-	if err != nil {
-		return fmt.Errorf("unable to add signature to existing event (could not serialize new event: %s)", err)
-	}
-
-	newDigest, err := event.DigestString(newSerialized, derivation.Blake3256)
-	if err != nil {
-		return fmt.Errorf("unable to add signature to existing event (could not digest new event: %s)", err)
-	}
-
-	if newDigest != extDigest {
-		// likely duplicitous Event!
-		// if adding to the duplicitous escrow fails do not consider an error (at this point)
-		_ = l.Duplicitous.Add(e)
-		return errors.New("unable to add signature to existing event (new event digest does not match)")
-	}
-
-	ext.Signatures = mergeSignatures(ext.Signatures, e.Signatures)
-
-	return nil
+	return l.db.LogEvent(e, true)
 }
 
 // mergeSignatures takes incoming signatures and merges them into a list

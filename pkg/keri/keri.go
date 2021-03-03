@@ -81,6 +81,10 @@ func (r *Keri) ProcessEvents(msgs ...*event.Message) ([]*event.Message, error) {
 				return nil, err
 			}
 
+			if msg.Event.Prefix == r.pre {
+				continue
+			}
+
 			vrc, err := r.generateReceipt(msg.Event)
 			if err != nil {
 				return nil, errors.Wrap(err, "unable to generate single vrc")
@@ -306,30 +310,11 @@ func (r *Keri) sign(evt *event.Event) (*derivation.Derivation, error) {
 func (r *Keri) ProcessEvent(msg *event.Message) error {
 
 	evt := msg.Event
-	ilk := evt.ILK()
 
 	var kel *klog.Log
 	kel = klog.New(evt.Prefix, r.db)
 
-	if !r.db.Seen(evt.Prefix) {
-		if ilk != event.ICP && ilk != event.DIP {
-			//TODO: Handle out-of-order events
-			return errors.New("out of order events not currently handled")
-		}
-
-	} else {
-		if ilk == event.ICP || ilk == event.DIP {
-			//TODO: Handle duplicitious events
-			return errors.New("duplicitious events not currently handled")
-		}
-	}
-
-	err := kel.Verify(msg)
-	if err != nil {
-		return fmt.Errorf("unable to verify message: (%v)", err)
-	}
-
-	err = kel.Apply(msg)
+	err := kel.Apply(msg)
 	if err != nil {
 		return fmt.Errorf("unable to apply message: (%v)", err)
 	}
@@ -372,12 +357,6 @@ func (r *Keri) ProcessReceipt(vrc *event.Message) error {
 	if dig != seal.Digest {
 		return errors.New("invalid vrc seal")
 	}
-
-	//TODO:  Verify receipt sigs
-	//err = receiptorKEL.Verify(vrc)
-	//if err != nil {
-	//	return errors.Wrap(err, "unable to verify vrc signatures")
-	//}
 
 	err = kel.ApplyReceipt(vrc)
 	if err != nil {
