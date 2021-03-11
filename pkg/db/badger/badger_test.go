@@ -663,7 +663,7 @@ func TestSignatures(t *testing.T) {
 	dig, err := icp.GetDigest()
 	assert.NoError(t, err)
 
-	kms := testkms.GetKMS(t, secrets)
+	kms := testkms.GetKMS(t, secrets, db)
 
 	ser, err := icp.Serialize()
 	assert.NoError(t, err)
@@ -737,7 +737,7 @@ func TestMessage(t *testing.T) {
 	dig, err := icp.GetDigest()
 	assert.NoError(t, err)
 
-	kms := testkms.GetKMS(t, secrets)
+	kms := testkms.GetKMS(t, secrets, db)
 
 	ser, err := icp.Serialize()
 	assert.NoError(t, err)
