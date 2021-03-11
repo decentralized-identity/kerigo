@@ -125,7 +125,7 @@ func TestVerifyAndApply(t *testing.T) {
 	assert := assert.New(t)
 	db := mem.New()
 
-	kms := testkms.GetKMS(t, secrets)
+	kms := testkms.GetKMS(t, secrets, mem.New())
 	thresh, _ := event.NewSigThreshold(1)
 	icp := test.InceptionFromSecrets(t, []string{secrets[0]}, []string{secrets[1]}, *thresh, *thresh)
 
@@ -291,14 +291,14 @@ func TestMultiSigApply(t *testing.T) {
 
 	db := mem.New()
 
-	kms1 := testkms.GetKMS(t, secrets[:2])
+	kms1 := testkms.GetKMS(t, secrets[:2], mem.New())
 	sigDer1, err := derivation.New(derivation.WithCode(derivation.Ed25519Attached), derivation.WithSigner(kms1.Signer()))
 	assert.Nil(err)
-	kms2 := testkms.GetKMS(t, secrets[3:5])
+	kms2 := testkms.GetKMS(t, secrets[3:5], mem.New())
 	sigDer2, err := derivation.New(derivation.WithCode(derivation.Ed25519Attached), derivation.WithSigner(kms2.Signer()))
 	sigDer2.KeyIndex = 1
 	assert.Nil(err)
-	kms3 := testkms.GetKMS(t, secrets[6:])
+	kms3 := testkms.GetKMS(t, secrets[6:], mem.New())
 	sigDer3, err := derivation.New(derivation.WithCode(derivation.Ed25519Attached), derivation.WithSigner(kms3.Signer()))
 	sigDer3.KeyIndex = 2
 	assert.Nil(err)
@@ -531,7 +531,7 @@ func TestReceipts(t *testing.T) {
 
 	assert.NoError(t, err)
 
-	kms1 := testkms.GetKMS(t, secrets[:2])
+	kms1 := testkms.GetKMS(t, secrets[:2], mem.New())
 	siger, err := derivation.New(derivation.WithCode(derivation.Ed25519Attached), derivation.WithSigner(kms1.Signer()))
 
 	ser, err := vrc.Serialize()

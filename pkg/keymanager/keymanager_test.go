@@ -32,6 +32,7 @@ func keyMgr(t *testing.T, opts ...Option) *KeyManager {
 	assert.NoError(t, err)
 
 	opts = append(opts, WithAEAD(a))
+	opts = append(opts, WithStore(mem.New()))
 	km, err := NewKeyManager(opts...)
 	assert.NoError(t, err)
 	return km

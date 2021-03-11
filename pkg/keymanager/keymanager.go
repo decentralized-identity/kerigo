@@ -11,7 +11,6 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/decentralized-identity/kerigo/pkg/db"
-	"github.com/decentralized-identity/kerigo/pkg/db/mem"
 	"github.com/decentralized-identity/kerigo/pkg/derivation"
 )
 
@@ -37,7 +36,6 @@ func NewKeyManager(opts ...Option) (*KeyManager, error) {
 
 	km := &KeyManager{
 		secrets: []string{},
-		store:   mem.New(),
 		kw:      &dummyAEAD{},
 	}
 
@@ -46,6 +44,10 @@ func NewKeyManager(opts ...Option) (*KeyManager, error) {
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	if km.store == nil {
+		return nil, errors.New("must provide db")
 	}
 
 	km.enveloper = aead.NewKMSEnvelopeAEAD2(aead.AES256GCMKeyTemplate(), km.kw)

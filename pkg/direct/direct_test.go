@@ -21,7 +21,7 @@ func TestDial(t *testing.T) {
 		"A1-QxDkso9-MR1A8rZz_Naw6fgaAtayda8hrbkRVVu1E",
 	}
 
-	bobKMS := kms.GetKMS(t, bobSecrets)
+	bobKMS := kms.GetKMS(t, bobSecrets, mem.New())
 
 	bobID, err := keri.New(bobKMS, mem.New())
 	assert.NoError(t, err)
@@ -39,7 +39,7 @@ func TestSingleMessage(t *testing.T) {
 	}
 	addr := ":5901"
 
-	eveKMS := kms.GetKMS(t, eveSecrets)
+	eveKMS := kms.GetKMS(t, eveSecrets, mem.New())
 
 	eveID, err := keri.New(eveKMS, mem.New())
 	assert.NoError(t, err)
@@ -61,7 +61,7 @@ func TestSingleMessage(t *testing.T) {
 		"AKuYMe09COczwf2nIoD5AE119n7GLFOVFlNLxZcKuswc",
 	}
 
-	bobKMS := kms.GetKMS(t, bobSecrets)
+	bobKMS := kms.GetKMS(t, bobSecrets, mem.New())
 
 	bobID, err := keri.New(bobKMS, mem.New())
 	assert.NoError(t, err)
@@ -99,7 +99,7 @@ func TestWithNotify(t *testing.T) {
 	}
 	addr := ":5902"
 
-	eveKMS := kms.GetKMS(t, eveSecrets)
+	eveKMS := kms.GetKMS(t, eveSecrets, mem.New())
 
 	eveID, err := keri.New(eveKMS, mem.New())
 	assert.NoError(t, err)
@@ -121,7 +121,7 @@ func TestWithNotify(t *testing.T) {
 		"AKuYMe09COczwf2nIoD5AE119n7GLFOVFlNLxZcKuswc",
 	}
 
-	bobKMS := kms.GetKMS(t, bobSecrets)
+	bobKMS := kms.GetKMS(t, bobSecrets, mem.New())
 
 	bobID, err := keri.New(bobKMS, mem.New())
 	assert.NoError(t, err)

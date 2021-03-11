@@ -170,7 +170,7 @@ func (r *Server) removeConnection(conn *conn) {
 }
 
 func defaultKMS() *keymanager.KeyManager {
-	kms, _ := keymanager.NewKeyManager()
+	kms, _ := keymanager.NewKeyManager(keymanager.WithStore(mem.New()))
 	return kms
 }
 

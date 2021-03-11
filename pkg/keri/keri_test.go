@@ -14,7 +14,7 @@ import (
 
 func TestInception(t *testing.T) {
 	secrets := []string{"ADW3o9m3udwEf0aoOdZLLJdf1aylokP0lwwI_M2J9h0s", "AagumsL8FeGES7tYcnr_5oN6qcwJzZfLKxoniKUpG4qc"}
-	kms := testkms.GetKMS(t, secrets)
+	kms := testkms.GetKMS(t, secrets, mem.New())
 
 	k, err := New(kms, mem.New())
 	assert.NoError(t, err)
@@ -30,7 +30,7 @@ func TestInception(t *testing.T) {
 
 func TestSign(t *testing.T) {
 	secrets := []string{"ADW3o9m3udwEf0aoOdZLLJdf1aylokP0lwwI_M2J9h0s", "AagumsL8FeGES7tYcnr_5oN6qcwJzZfLKxoniKUpG4qc"}
-	kms := testkms.GetKMS(t, secrets)
+	kms := testkms.GetKMS(t, secrets, mem.New())
 
 	k, err := New(kms, mem.New())
 	assert.NoError(t, err)
@@ -47,11 +47,11 @@ func TestDirectMode(t *testing.T) {
 
 	t.Run("no wait", func(t *testing.T) {
 
-		eveKms := testkms.GetKMS(t, eveSecrets)
+		eveKms := testkms.GetKMS(t, eveSecrets, mem.New())
 		eve, err := New(eveKms, mem.New())
 		assert.NoError(t, err)
 
-		bobKms := testkms.GetKMS(t, bobSecrets)
+		bobKms := testkms.GetKMS(t, bobSecrets, mem.New())
 		bob, err := New(bobKms, mem.New())
 		assert.NoError(t, err)
 
@@ -89,11 +89,11 @@ func TestDirectMode(t *testing.T) {
 
 	t.Run("wait", func(t *testing.T) {
 
-		eveKms := testkms.GetKMS(t, eveSecrets)
+		eveKms := testkms.GetKMS(t, eveSecrets, mem.New())
 		eve, err := New(eveKms, mem.New())
 		assert.NoError(t, err)
 
-		bobKms := testkms.GetKMS(t, bobSecrets)
+		bobKms := testkms.GetKMS(t, bobSecrets, mem.New())
 		bob, err := New(bobKms, mem.New())
 		assert.NoError(t, err)
 
@@ -141,7 +141,7 @@ func TestDirectMode(t *testing.T) {
 func TestInteractionEvent(t *testing.T) {
 	expectedBytes := `{"v":"KERI10JSON000098_","i":"Eh0fefvTQ55Jwps4dVnIekf7mZgWoU8bCUsDsKeGiEgU","s":"1","t":"ixn","p":"EUO96wFpqn7NQgDqRybT1ADVgaony353BSIOkJwdBFSE","a":[]}-AABAAvle4YOvsulhpBC3PbZRe3hNF2JaVDUMlzLaiIk61Puaizy2jCYuoM3ycgM-v0VqKGDrSNbBFXxyVSYSesMhgDw`
 	secrets := []string{"ADW3o9m3udwEf0aoOdZLLJdf1aylokP0lwwI_M2J9h0s", "AagumsL8FeGES7tYcnr_5oN6qcwJzZfLKxoniKUpG4qc"}
-	kms := testkms.GetKMS(t, secrets)
+	kms := testkms.GetKMS(t, secrets, mem.New())
 
 	k, err := New(kms, mem.New())
 	assert.NoError(t, err)
@@ -162,11 +162,11 @@ func TestFindConnection(t *testing.T) {
 
 	t.Run("no wait", func(t *testing.T) {
 
-		eveKms := testkms.GetKMS(t, eveSecrets)
+		eveKms := testkms.GetKMS(t, eveSecrets, mem.New())
 		eve, err := New(eveKms, mem.New())
 		assert.NoError(t, err)
 
-		bobKms := testkms.GetKMS(t, bobSecrets)
+		bobKms := testkms.GetKMS(t, bobSecrets, mem.New())
 		bob, err := New(bobKms, mem.New())
 		assert.NoError(t, err)
 
@@ -183,7 +183,7 @@ func TestFindConnection(t *testing.T) {
 	})
 
 	t.Run("not found", func(t *testing.T) {
-		kms := testkms.GetKMS(t, secrets)
+		kms := testkms.GetKMS(t, secrets, mem.New())
 
 		k, err := New(kms, mem.New())
 		assert.NoError(t, err)
