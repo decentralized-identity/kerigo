@@ -1,6 +1,7 @@
 package event
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"fmt"
 	"math/big"
@@ -155,4 +156,13 @@ func TestNextDigest(t *testing.T) {
 	assert.NoError(err)
 	assert.Equal("EPYuj8mq_PYYsoBKkzX1kxSPGYBWaIya3slgCOyOtlqU", next)
 
+}
+
+func TestReceiptMarshalling(t *testing.T) {
+	quadlet := []byte(`EZNHWKpQpuUk5NCpMLPDlvsMAjQelNR1defp5wx30jtY0AAAAAAAAAAAAAAAAAAAAABAETVS3U7GGytIWRnh2gEpQSLLdgHn-FdehvTrlN0OunioAAnlC9GCUDY9jySn6zaO-iKSeeWfF5UHjEzCE819Sph6UGdCySNGbPjCYhGB4U5XM4K1Gm-1wNsTKpwSWyyr_MDg`)
+
+	evt, err := ParseAttachedQuadlet(bytes.NewReader(quadlet))
+	assert.NoError(t, err)
+
+	assert.Equal(t, evt.Sequence, 4)
 }

@@ -2,8 +2,7 @@ package badger
 
 import (
 	"bytes"
-	"fmt"
-	"strings"
+	"strconv"
 	"time"
 
 	"github.com/dgraph-io/badger"
@@ -347,6 +346,24 @@ func (r *DB) signatures(txn *badger.Txn, pre, dig string) ([]derivation.Derivati
 	return out, nil
 }
 
+func (r *DB) transferableRcpts(txn *badger.Txn, pre, dig string) ([][]byte, error) {
+	s, err := r.vrcs.Get(txn, pre, dig)
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to get signatures")
+	}
+
+	return s, nil
+}
+
+func (r *DB) nonTransferableRcpts(txn *badger.Txn, pre, dig string) ([][]byte, error) {
+	s, err := r.rcts.Get(txn, pre, dig)
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to get signatures")
+	}
+
+	return s, nil
+}
+
 func (r *DB) Event(pre, dig string) (*event.Event, error) {
 	txn := r.db.NewTransaction(false)
 	defer txn.Discard()
@@ -384,9 +401,59 @@ func (r *DB) message(txn *badger.Txn, pre, dig string) (*event.Message, error) {
 		return nil, errors.Wrap(err, "unable to load signatures")
 	}
 
+	bvrcs, err := r.transferableRcpts(txn, pre, dig)
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to load receipts")
+	}
+
+	brcts, err := r.nonTransferableRcpts(txn, pre, dig)
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to load receipts")
+	}
+
+	vrcs := make([]*event.Receipt, len(bvrcs))
+	for i, bvrc := range bvrcs {
+		quad, err := event.ParseAttachedQuadlet(bytes.NewReader(bvrc))
+		if err != nil {
+			return nil, errors.Wrap(err, "unable to parse quadlet")
+		}
+
+		rcpt, err := event.NewReceipt(evt,
+			event.WithQB64(bvrc),
+			event.WithSignature(quad.Signature),
+			event.WithEstablishmentSeal(&event.Seal{
+				Prefix:   quad.Prefix.AsPrefix(),
+				Sequence: strconv.Itoa(quad.Sequence),
+				Digest:   quad.Digest.AsPrefix(),
+			}),
+		)
+
+		vrcs[i] = rcpt
+	}
+
+	rcts := make([]*event.Receipt, len(brcts))
+	for i, brct := range brcts {
+		couple, err := event.ParseAttachedCouplet(bytes.NewReader(brct))
+		if err != nil {
+			return nil, errors.Wrap(err, "unable to hydrate new receipt")
+		}
+
+		rcpt, err := event.NewReceipt(evt,
+			event.WithQB64(brct),
+			event.WithSignerPrefix(couple.Prefix.AsPrefix()),
+			event.WithSignature(couple.Signature))
+		if err != nil {
+			return nil, err
+		}
+
+		rcts[i] = rcpt
+	}
+
 	return &event.Message{
-		Event:      evt,
-		Signatures: sigs,
+		Event:                   evt,
+		Signatures:              sigs,
+		TransferableReceipts:    vrcs,
+		NonTransferableReceipts: rcts,
 	}, nil
 }
 
@@ -560,17 +627,32 @@ func (r *DB) LastAcceptedDigest(pre string, seq int) ([]byte, error) {
 	return vals[len(vals)-1], nil
 }
 
-func (r *DB) LogTransferableReceipt(vrc *event.Event, sig derivation.Derivation) error {
+func (r *DB) LogTransferableReceipt(vrc *event.Receipt) error {
 	txn := r.db.NewTransaction(true)
 	defer txn.Discard()
 
 	pre := vrc.Prefix
-	sn := vrc.SequenceInt()
+	dig := vrc.Digest
 
-	seal := vrc.Seals[0]
-	quadlet := strings.Join([]string{seal.Prefix, fmt.Sprintf("%024d", seal.SequenceInt()), seal.Digest, sig.AsPrefix()}, "")
+	quadlet := vrc.Text()
 
-	err := r.vrcs.Add(txn, []byte(quadlet), pre, sn)
+	err := r.vrcs.Add(txn, quadlet, pre, dig)
+	if err != nil {
+		return err
+	}
+
+	return txn.Commit()
+}
+
+func (r *DB) LogNonTransferableReceipt(rct *event.Receipt) error {
+	txn := r.db.NewTransaction(true)
+	defer txn.Discard()
+
+	pre := rct.Prefix
+	dig := rct.Digest
+	couplet := rct.Text()
+
+	err := r.rcts.Add(txn, couplet, pre, dig)
 	if err != nil {
 		return err
 	}

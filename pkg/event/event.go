@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 	"strconv"
+	"strings"
 
 	"github.com/mitchellh/mapstructure"
 	"github.com/pkg/errors"
@@ -479,4 +480,24 @@ func NextDigest(threshold string, code derivation.Code, keys ...prefix.Prefix) (
 	}
 
 	return nextDig.AsPrefix(), nil
+}
+
+func MarshalReceipt(rct *Event, sig derivation.Derivation) ([]byte, error) {
+	switch rct.ILK() {
+	case RCT:
+		pre := rct.Prefix
+		couplet := strings.Join([]string{pre, sig.AsPrefix()}, "")
+		return []byte(couplet), nil
+	case VRC:
+		seal := rct.Seals[0]
+		quadlet := strings.Join([]string{seal.Prefix, fmt.Sprintf("%024d", seal.SequenceInt()), seal.Digest, sig.AsPrefix()}, "")
+		return []byte(quadlet), nil
+	}
+
+	return nil, errors.New("invalid event type to marshal receipt")
+}
+
+func UnmarshalReceipt(d []byte) (*Event, derivation.Derivation, error) {
+	//prefixCode := d[0]
+	return nil, derivation.Derivation{}, errors.New("not implemented")
 }

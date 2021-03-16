@@ -82,6 +82,6 @@ func main() {
 		}
 	}(*e)
 
-	err = srv.ListenAndServer()
+	err = srv.ListenAndServe()
 	log.Printf("direct mode server exited with %v\n", err)
 }

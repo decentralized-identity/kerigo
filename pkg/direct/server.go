@@ -1,7 +1,6 @@
 package direct
 
 import (
-	"bufio"
 	"log"
 	"net"
 	"sync"
@@ -10,6 +9,7 @@ import (
 
 	"github.com/decentralized-identity/kerigo/pkg/db"
 	"github.com/decentralized-identity/kerigo/pkg/db/mem"
+	"github.com/decentralized-identity/kerigo/pkg/encoding/stream"
 	"github.com/decentralized-identity/kerigo/pkg/event"
 	"github.com/decentralized-identity/kerigo/pkg/keri"
 	"github.com/decentralized-identity/kerigo/pkg/keymanager"
@@ -43,7 +43,7 @@ type Server struct {
 	conns    []*conn
 }
 
-func (r *Server) ListenAndServer() error {
+func (r *Server) ListenAndServe() error {
 
 	if r.Addr == "" {
 		r.Addr = DefaultDirectModeAddr
@@ -82,9 +82,9 @@ func (r *Server) Serve(l net.Listener) error {
 			return errors.Wrap(err, "unexpected error accepting connection")
 		}
 
-		br := bufio.NewReader(c)
+		br := stream.NewReader(c)
 
-		firstMsg, err := readMessage(br)
+		firstMsg, err := br.Read()
 		if err != nil {
 			log.Println("error reading initial message on connection", err)
 			c.Close()
@@ -94,6 +94,7 @@ func (r *Server) Serve(l net.Listener) error {
 		ioc := &conn{
 			reader: br,
 			conn:   c,
+			writer: stream.NewWriter(c),
 		}
 
 		r.addConnection(ioc)
@@ -119,7 +120,6 @@ func (r *Server) Serve(l net.Listener) error {
 				}
 			}
 		}
-		//TODO:  I have the Keri instance to use for this connection, I need to check for the ICP.
 
 		outmsgs, err := connID.ProcessEvents(firstMsg)
 		if err != nil {

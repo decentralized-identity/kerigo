@@ -1,7 +1,6 @@
 package direct
 
 import (
-	"bufio"
 	"context"
 	"log"
 	"net"
@@ -10,6 +9,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/pkg/errors"
 
+	"github.com/decentralized-identity/kerigo/pkg/encoding/stream"
 	"github.com/decentralized-identity/kerigo/pkg/event"
 	"github.com/decentralized-identity/kerigo/pkg/keri"
 )
@@ -48,7 +48,8 @@ func DialTimeout(id *keri.Keri, addr string, timeout time.Duration) (*Client, er
 		}
 
 		o.ioc = &conn{
-			reader: bufio.NewReader(c),
+			reader: stream.NewReader(c),
+			writer: stream.NewWriter(c),
 			conn:   c,
 		}
 		return nil

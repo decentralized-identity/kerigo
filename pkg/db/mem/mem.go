@@ -3,11 +3,8 @@ package mem
 import (
 	"bytes"
 	"errors"
-	"fmt"
-	"strings"
 	"sync"
 
-	"github.com/decentralized-identity/kerigo/pkg/derivation"
 	"github.com/decentralized-identity/kerigo/pkg/event"
 )
 
@@ -367,20 +364,36 @@ func (r *DB) StreamPending(pre string, handler func(*event.Message) error) error
 
 }
 
-func (r *DB) LogTransferableReceipt(vrc *event.Event, sig derivation.Derivation) error {
+func (r *DB) LogTransferableReceipt(vrc *event.Receipt) error {
 	r.rcptLock.Lock()
 	defer r.rcptLock.Unlock()
 
 	pre := vrc.Prefix
-	seal := vrc.Seals[0]
-	quadlet := strings.Join([]string{seal.Prefix, fmt.Sprintf("%024d", seal.SequenceInt()), seal.Digest, sig.AsPrefix()}, "")
+	quadlet := vrc.Text()
 
 	_, ok := r.rcpts[pre]
 	if !ok {
 		r.rcpts[pre] = []string{}
 	}
 
-	r.rcpts[pre] = append(r.rcpts[pre], quadlet)
+	r.rcpts[pre] = append(r.rcpts[pre], string(quadlet))
+
+	return nil
+}
+
+func (r *DB) LogNonTransferableReceipt(vrc *event.Receipt) error {
+	r.rcptLock.Lock()
+	defer r.rcptLock.Unlock()
+
+	pre := vrc.Prefix
+	couplet := vrc.Text()
+
+	_, ok := r.rcpts[pre]
+	if !ok {
+		r.rcpts[pre] = []string{}
+	}
+
+	r.rcpts[pre] = append(r.rcpts[pre], string(couplet))
 
 	return nil
 }
