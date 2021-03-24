@@ -12,6 +12,8 @@ package derivation
 import (
 	"encoding/base64"
 	"fmt"
+	"io"
+	"strings"
 )
 
 // DerivationOption is a genric configuration function for derivations
@@ -140,6 +142,65 @@ func FromPrefix(data string) (*Derivation, error) {
 	}
 
 	raw, err := base64.RawURLEncoding.DecodeString(data[d.Code.Length():])
+	if err != nil || len(raw) != d.Code.DataLength() {
+		return nil, fmt.Errorf("unable to parse prefix (%s)", err)
+	}
+
+	d.Raw = raw
+
+	return d, nil
+}
+
+// ParsePrefix takes a prefix as input and returns the appropriate drivation
+// and raw (base64 unencoded) data represented by the prefix.
+func ParsePrefix(buf io.Reader) (*Derivation, error) {
+	dCode := make([]byte, 1)
+	read, err := buf.Read(dCode)
+	if read != 1 || err != nil {
+		return nil, fmt.Errorf("unable to read receipt (%s)", err)
+	}
+
+	var d *Derivation
+
+	var code string
+	switch dCode[0] {
+	case '0':
+		read, err = buf.Read(dCode)
+		if read != 1 || err != nil {
+			return nil, fmt.Errorf("unable to read receipt (%s)", err)
+		}
+
+		code = strings.Join([]string{"0", string(dCode[0])}, "")
+		if dc, ok := codeValue[code]; ok {
+			d, _ = New(WithCode(dc))
+		} else {
+			return nil, fmt.Errorf("unable to determin derevation from code %s", dCode[:1])
+		}
+	default:
+		// we are dealing with a single Letter prefix
+		code = string(dCode[0])
+		if dc, ok := codeValue[code]; ok {
+			d, _ = New(WithCode(dc))
+		} else {
+			return nil, fmt.Errorf("unable to determin derevation from code %s", dCode[:1])
+		}
+	}
+
+	if d == nil {
+		return nil, fmt.Errorf("unable to determin derevation")
+	}
+
+	dlen := d.Code.PrefixBase64Length() - len(code)
+
+	rest := make([]byte, dlen)
+	read, err = buf.Read(rest)
+	if read != dlen || err != nil {
+		return nil, fmt.Errorf("unable to read receipt (%s)", err)
+	}
+
+	data := string(rest)
+
+	raw, err := base64.RawURLEncoding.DecodeString(data)
 	if err != nil || len(raw) != d.Code.DataLength() {
 		return nil, fmt.Errorf("unable to parse prefix (%s)", err)
 	}

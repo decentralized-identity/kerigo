@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"os"
 
 	"github.com/google/tink/go/aead"
 	"github.com/google/tink/go/keyset"
 
 	kbdgr "github.com/decentralized-identity/kerigo/pkg/db/badger"
+	"github.com/decentralized-identity/kerigo/pkg/encoding/stream"
 	"github.com/decentralized-identity/kerigo/pkg/event"
 	"github.com/decentralized-identity/kerigo/pkg/keri"
 	"github.com/decentralized-identity/kerigo/pkg/keymanager"
@@ -35,7 +37,7 @@ func main() {
 
 	count := 0
 	err := goodGuy.Replay(goodGuy.Prefix(), keri.FirstSeenReplay, func(e *event.Message) error {
-		err := innocent.ProcessEvent(e)
+		_, err := innocent.ProcessEvents(e)
 		count++
 		return err
 	})
@@ -53,7 +55,7 @@ func main() {
 
 	dig, _ := ixn.Event.GetDigest()
 	fmt.Println("Bad Guy duplicitious IXN", dig)
-	err = innocent.ProcessEvent(ixn)
+	_, err = innocent.ProcessEvents(ixn)
 	if err != nil {
 		log.Fatalf("%+v\n", err)
 	}
@@ -66,7 +68,7 @@ func main() {
 
 	dig, _ = ixn.Event.GetDigest()
 	fmt.Println("Bad Guy 2nd duplicitious IXN", dig)
-	err = innocent.ProcessEvent(ixn)
+	_, err = innocent.ProcessEvents(ixn)
 	if err != nil {
 		log.Fatalf("%+v\n", err)
 	}
@@ -79,7 +81,7 @@ func main() {
 
 	dig, _ = ixn.Event.GetDigest()
 	fmt.Println("Bad Guy 3rd duplicitious IXN", dig)
-	err = innocent.ProcessEvent(ixn)
+	_, err = innocent.ProcessEvents(ixn)
 	if err != nil {
 		log.Fatalf("%+v\n", err)
 	}
@@ -91,7 +93,7 @@ func main() {
 
 	dig, _ = rot.Event.GetDigest()
 	fmt.Println("Good Guy recover ROT", dig)
-	err = innocent.ProcessEvent(rot)
+	_, err = innocent.ProcessEvents(rot)
 	if err != nil {
 		log.Fatalf("%+v\n", err)
 	}
@@ -118,6 +120,18 @@ func main() {
 	fmt.Println("****************************************************")
 	fmt.Println("")
 
+	fmt.Println("")
+
+	fmt.Println("****************************************************")
+	fmt.Println("************** First Seen Conjoint *****************")
+	fmt.Println("****************************************************")
+	enc := stream.NewWriter(os.Stdout, stream.WithSerializationMode(stream.ConjointMode))
+	err = innocent.Replay(goodGuy.Prefix(), keri.FirstSeenReplay, func(e *event.Message) error {
+		return enc.Write(e)
+	})
+	fmt.Println("")
+	fmt.Println("****************************************************")
+
 	if err != nil {
 		log.Fatalf("%+v\n", err)
 	}
@@ -133,8 +147,6 @@ func createInnocent() *keri.Keri {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	//
-	//db := mem.New()
 
 	kh, err := keyset.NewHandle(aead.AES256GCMKeyTemplate())
 	if err != nil {
@@ -170,8 +182,6 @@ func createGoodGuy() *keri.Keri {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	//
-	//db := mem.New()
 
 	kh, err := keyset.NewHandle(aead.AES256GCMKeyTemplate())
 	if err != nil {
@@ -240,8 +250,6 @@ func createBadGuy() *keri.Keri {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	//
-	//db := mem.New()
 
 	kh, err := keyset.NewHandle(aead.AES256GCMKeyTemplate())
 	if err != nil {

@@ -15,31 +15,18 @@ import (
 func TestTransferable(t *testing.T) {
 	remoteSecret := "ArwXoACJgOleVZ2PY7kXn7rA0II0mHYDhc6WrBH8fDAc"
 	remoteNext := "A6zz7M08-HQSFq92sJ8KJOT2cZ47x7pXFQLPB0pckB3Q"
-	localSecret := "AgjD4nRlycmM5cPcAkfOATAp8wVldRsnc9f1tiwctXlw"
-	localNext := "AKUotEE0eAheKdDJh9QvNmSEmO_bjIav8V_GmctGpuCQ"
+	//localSecret := "AgjD4nRlycmM5cPcAkfOATAp8wVldRsnc9f1tiwctXlw"
+	//localNext := "AKUotEE0eAheKdDJh9QvNmSEmO_bjIav8V_GmctGpuCQ"
 
 	remoteICP := incept(t, remoteSecret, remoteNext)
-	estEvent := incept(t, localSecret, localNext)
+	//estEvent := incept(t, localSecret, localNext)
 
 	icpBytes := `{"v":"KERI10JSON0000e6_","i":"Ep9IFLmnLTwz_EfZCXOuVHcYFmoHNKgqz7nQ1ItKX9pc","s":"0","t":"icp","kt":"1","k":["DSuhyBcPZEZLK-fcw5tzHn2N46wRCG_ZOoeKtWTOunRA"],"n":"EPYuj8mq_PYYsoBKkzX1kxSPGYBWaIya3slgCOyOtlqU","wt":"0","w":[],"c":[]}`
-	expectedVRCBytes := `{"v":"KERI10JSON000105_","i":"Ep9IFLmnLTwz_EfZCXOuVHcYFmoHNKgqz7nQ1ItKX9pc","s":"0","t":"vrc","d":"EBSQD8MrJi-qTF--fg1hMT7a-sVacyFjeaPn3FduKNsc","a":{"i":"E482bsaPDuLO25ilSJkErz-Xqmw4knyAZd1Ah01do9k0","s":"0","d":"Ej2wcLnGA6DJHhF3f08nIIhoZncG2O1pVKgFvWLPDFjg"}}`
+	//expectedVRCBytes := `{"v":"KERI10JSON000105_","i":"Ep9IFLmnLTwz_EfZCXOuVHcYFmoHNKgqz7nQ1ItKX9pc","s":"0","t":"vrc","d":"EBSQD8MrJi-qTF--fg1hMT7a-sVacyFjeaPn3FduKNsc","a":{"i":"E482bsaPDuLO25ilSJkErz-Xqmw4knyAZd1Ah01do9k0","s":"0","d":"Ej2wcLnGA6DJHhF3f08nIIhoZncG2O1pVKgFvWLPDFjg"}}`
 
 	d, _ := json.Marshal(remoteICP)
 	assert.JSONEq(t, icpBytes, string(d))
 
-	vrc, err := TransferableReceipt(remoteICP, estEvent, derivation.Blake3256)
-	assert.NoError(t, err)
-
-	vrc.Version = DefaultVersionString(JSON)
-
-	eventBytes, err := vrc.Serialize()
-	assert.NoError(t, err)
-	vrc.Version = VersionString(JSON, version.Code(), len(eventBytes))
-
-	vrcBytes, err := vrc.Serialize()
-	assert.NoError(t, err)
-
-	assert.Equal(t, expectedVRCBytes, string(vrcBytes))
 }
 
 func TestNonTransferable(t *testing.T) {
@@ -49,24 +36,11 @@ func TestNonTransferable(t *testing.T) {
 	remoteICP := incept(t, remoteSecret, remoteNext)
 
 	icpBytes := `{"v":"KERI10JSON0000e6_","i":"Ep9IFLmnLTwz_EfZCXOuVHcYFmoHNKgqz7nQ1ItKX9pc","s":"0","t":"icp","kt":"1","k":["DSuhyBcPZEZLK-fcw5tzHn2N46wRCG_ZOoeKtWTOunRA"],"n":"EPYuj8mq_PYYsoBKkzX1kxSPGYBWaIya3slgCOyOtlqU","wt":"0","w":[],"c":[]}`
-	expectedVRCBytes := `{"v":"KERI10JSON0000a3_","i":"Ep9IFLmnLTwz_EfZCXOuVHcYFmoHNKgqz7nQ1ItKX9pc","s":"0","t":"rct","d":"EBSQD8MrJi-qTF--fg1hMT7a-sVacyFjeaPn3FduKNsc","kt":"1","wt":"0"}`
+	//expectedVRCBytes := `{"v":"KERI10JSON0000a3_","i":"Ep9IFLmnLTwz_EfZCXOuVHcYFmoHNKgqz7nQ1ItKX9pc","s":"0","t":"rct","d":"EBSQD8MrJi-qTF--fg1hMT7a-sVacyFjeaPn3FduKNsc","kt":"1","wt":"0"}`
 
 	d, _ := json.Marshal(remoteICP)
 	assert.JSONEq(t, icpBytes, string(d))
 
-	vrc, err := NonTransferableReceipt(remoteICP, derivation.Blake3256)
-	assert.NoError(t, err)
-
-	vrc.Version = DefaultVersionString(JSON)
-
-	eventBytes, err := vrc.Serialize()
-	assert.NoError(t, err)
-	vrc.Version = VersionString(JSON, version.Code(), len(eventBytes))
-
-	vrcBytes, err := vrc.Serialize()
-	assert.NoError(t, err)
-
-	assert.Equal(t, expectedVRCBytes, string(vrcBytes))
 }
 
 func incept(t *testing.T, secret, next string) *Event {

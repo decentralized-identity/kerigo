@@ -254,38 +254,70 @@ func (r *Keri) WaitForReceipt(evt *event.Event, timeout time.Duration) (chan *ev
 }
 
 func (r *Keri) generateReceipt(evt *event.Event) (*event.Message, error) {
+
 	latestEst, err := r.db.CurrentEstablishmentEvent(r.pre)
 	if err != nil {
 		return nil, errors.Wrap(err, "unexpected error getting current KEL")
 	}
 
-	rec, err := event.TransferableReceipt(evt, latestEst.Event, derivation.Blake3256)
-	if err != nil {
-		return nil, errors.Wrap(err, "unable to generate receipt:")
+	var rcpt *event.Receipt
+	var sig *derivation.Derivation
+	if latestEst.Event.Next == "" {
+		sig, err = derivation.New(derivation.WithCode(derivation.Ed25519Attached), derivation.WithSigner(r.kms.Signer()))
+		if err != nil {
+			return nil, errors.Wrap(err, "unexpected error getting new derivation")
+		}
+
+		//Sign the receipted event, not the receipt
+		evtData, err := json.Marshal(evt)
+		if err != nil {
+			return nil, errors.Wrap(err, "unexpected error marshalling receipted event")
+		}
+
+		_, err = sig.Derive(evtData)
+		if err != nil {
+			return nil, errors.Wrap(err, "unable to derive signature")
+		}
+
+		rcpt, err = event.NewReceipt(evt, event.WithSignature(sig), event.WithSignerPrefix(latestEst.Event.Prefix))
+		if err != nil {
+			return nil, errors.Wrap(err, "unable to generate receipt:")
+		}
+
+		err = r.db.LogNonTransferableReceipt(rcpt)
+		if err != nil {
+			return nil, errors.Wrap(err, "unable to log receipt")
+		}
+	} else {
+
+		sig, err = derivation.New(derivation.WithCode(derivation.Ed25519Attached), derivation.WithSigner(r.kms.Signer()))
+		if err != nil {
+			return nil, errors.Wrap(err, "unexpected error getting new derivation")
+		}
+
+		//Sign the receipted event, not the receipt
+		evtData, err := evt.Serialize()
+		if err != nil {
+			return nil, errors.Wrap(err, "unexpected error marshalling receipted event")
+		}
+
+		_, err = sig.Derive(evtData)
+		if err != nil {
+			return nil, errors.Wrap(err, "unable to derive signature")
+		}
+
+		rcpt, err = event.NewReceipt(evt, event.WithSignature(sig), event.WithEstablishmentEvent(latestEst.Event))
+		if err != nil {
+			return nil, errors.Wrap(err, "unable to generate receipt:")
+		}
+
+		err = r.db.LogTransferableReceipt(rcpt)
+		if err != nil {
+			return nil, errors.Wrap(err, "unable to log receipt")
+		}
 	}
 
-	sig, err := derivation.New(derivation.WithCode(derivation.Ed25519Attached), derivation.WithSigner(r.kms.Signer()))
-	if err != nil {
-		return nil, errors.Wrap(err, "unexpected error getting new derivation")
-	}
-
-	//Sign the receipted event, not the receipt
-	evtData, err := json.Marshal(evt)
-	if err != nil {
-		return nil, errors.Wrap(err, "unexpected error marshalling receipted event")
-	}
-
-	_, err = sig.Derive(evtData)
-	if err != nil {
-		return nil, errors.Wrap(err, "unable to derive signature")
-	}
-
-	msg := &event.Message{
-		Event:      rec,
-		Signatures: []derivation.Derivation{*sig},
-	}
-
-	return msg, nil
+	return rcpt.Message()
 }
 
 func (r *Keri) sign(evt *event.Event) (*derivation.Derivation, error) {
@@ -358,7 +390,7 @@ func (r *Keri) ProcessReceipt(vrc *event.Message) error {
 		return errors.New("invalid vrc seal")
 	}
 
-	err = kel.ApplyReceipt(vrc)
+	err = kel.ApplyReceipt(evt.Event, vrc)
 	if err != nil {
 		return errors.Wrap(err, "unable to apply vrc")
 	}

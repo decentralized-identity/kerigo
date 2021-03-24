@@ -1,47 +1,25 @@
 package direct
 
 import (
-	"bufio"
 	"encoding/json"
-	"fmt"
-	"io"
 	"log"
 	"net"
-	"regexp"
-	"strconv"
-	"strings"
 
 	"github.com/pkg/errors"
 
-	"github.com/decentralized-identity/kerigo/pkg/derivation"
+	"github.com/decentralized-identity/kerigo/pkg/encoding"
 	"github.com/decentralized-identity/kerigo/pkg/event"
 	"github.com/decentralized-identity/kerigo/pkg/keri"
 )
 
-const (
-	FullVerSize = 17
-
-	MinSniffSize = 12 + FullVerSize
-
-	Verex = `KERI(?P<major>[0-9a-f])(?P<minor>[0-9a-f])(?P<kind>[A-Z]{4})(?P<size>[0-9a-f]{6})_`
-)
-
-var (
-	Rever = regexp.MustCompile(Verex)
-)
-
 type conn struct {
-	reader *bufio.Reader
+	reader encoding.Reader
 	conn   net.Conn
+	writer encoding.Writer
 }
 
 func (r *conn) Write(msg *event.Message) error {
-	data, err := msg.Serialize()
-	if err != nil {
-		return errors.Wrap(err, "unable to serialize message for stream outbound")
-	}
-
-	_, err = r.conn.Write(data)
+	err := r.writer.Write(msg)
 	if err != nil {
 		return errors.Wrap(err, "unable to right message to stream outbound")
 	}
@@ -55,7 +33,7 @@ func (r *conn) Write(msg *event.Message) error {
 func handleConnection(ioc *conn, id *keri.Keri) error {
 
 	for {
-		msg, err := readMessage(ioc.reader)
+		msg, err := ioc.reader.Read()
 		if err != nil {
 			return err
 		}
@@ -72,52 +50,4 @@ func handleConnection(ioc *conn, id *keri.Keri) error {
 			}
 		}
 	}
-}
-
-func readMessage(reader *bufio.Reader) (*event.Message, error) {
-
-	// read a min sized buffer which contains the message length
-	h, err := reader.Peek(MinSniffSize)
-	if err != nil {
-		return nil, err
-	}
-
-	submatches := Rever.FindStringSubmatch(string(h))
-	if len(submatches) != 5 {
-		return nil, errors.New("invalid version string")
-	}
-
-	ser := strings.TrimSpace(submatches[3])
-	hex := submatches[4]
-
-	size, err := strconv.ParseInt(hex, 16, 64)
-	if err != nil {
-		return nil, errors.Wrap(err, "invalid message size hex")
-	}
-
-	f, err := event.Format(ser)
-	if err != nil {
-		return nil, err
-	}
-
-	buff := make([]byte, size)
-	_, err = io.ReadFull(reader, buff)
-	if err != nil {
-		return nil, err
-	}
-
-	msg := &event.Message{}
-	msg.Event, err = event.Deserialize(buff, f)
-	if err != nil {
-		return nil, fmt.Errorf("unable to unmarshal event: (%v)", err)
-	}
-
-	sigs, err := derivation.ParseAttachedSignatures(reader)
-	if err != nil {
-		return nil, fmt.Errorf("error parsing sigs: %v", err)
-	}
-
-	msg.Signatures = sigs
-
-	return msg, nil
 }

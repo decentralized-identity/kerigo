@@ -182,7 +182,7 @@ func (l *Log) KeyState() (*event.Event, error) {
 
 // Apply the provided event to the log
 // Apply will confirm the sequence number and digest for the new log
-// entry are correct before applying. If the event message is for an
+// entry are correct before/ applying. If the event message is for an
 // event that has already been added to the log it will attempt to
 // add the provided signature. If the event is out of order (in the future)
 // it will escrow it.
@@ -255,30 +255,6 @@ func (l *Log) Apply(e *event.Message) error {
 		//Our of order event
 		return l.db.EscrowOutOfOrderEvent(e)
 	} else if sn == nextsn || ((ilk == event.ROT || ilk == event.DRT) && (lastsn < sn || lastsn <= nextsn)) {
-		// In order event or recovery event
-		// to support digest agility, we allow the current event to dictate what
-		// digest they want to use for the prior event
-		inDerivation, err := derivation.FromPrefix(e.Event.PriorEventDigest)
-		if err != nil {
-			return fmt.Errorf("unable to determine digest derivation (%s)", err)
-		}
-
-		current := l.Current()
-		curSerialized, err := current.Serialize()
-		if err != nil {
-			return fmt.Errorf("unable to serialize current event (%s)", err)
-		}
-
-		curDigest, err := event.Digest(curSerialized, inDerivation.Code)
-		if err != nil {
-			return fmt.Errorf("unable to digest current event (%s)", err)
-		}
-
-		if !bytes.Equal(curDigest, inDerivation.Raw) {
-			// someone has tried to add an invalid event to the log
-			_ = l.db.EscrowLikelyDuplicitiousEvent(e)
-			return errors.New("invalid digest for new event")
-		}
 
 		err = l.updateState(state, e)
 		if err != nil {
@@ -335,7 +311,7 @@ func (l *Log) Apply(e *event.Message) error {
 	return nil
 }
 
-func (l *Log) ApplyReceipt(vrc *event.Message) error {
+func (l *Log) ApplyReceipt(evt *event.Event, vrc *event.Message) error {
 
 	for _, sig := range vrc.Signatures {
 
@@ -345,7 +321,18 @@ func (l *Log) ApplyReceipt(vrc *event.Message) error {
 		//	return errors.Wrap(err, "unable to verify vrc signatures")
 		//}
 
-		err := l.db.LogTransferableReceipt(vrc.Event, sig)
+		opts := []event.ReceiptOpt{event.WithSignature(&sig)}
+
+		if len(vrc.Event.Seals) > 0 {
+			opts = append(opts, event.WithEstablishmentSeal(vrc.Event.Seals[0]))
+		}
+
+		rcpt, err := event.NewReceipt(evt, opts...)
+		if err != nil {
+			return err
+		}
+
+		err = l.db.LogTransferableReceipt(rcpt)
 		if err != nil {
 			return err
 		}
@@ -438,7 +425,32 @@ func (l *Log) updateState(state *event.Event, e *event.Message) error {
 		}
 
 	} else {
-		err := l.validateSigs(state, e)
+		// In order event or recovery event
+		// to support digest agility, we allow the current event to dictate what
+		// digest they want to use for the prior event
+		inDerivation, err := derivation.FromPrefix(e.Event.PriorEventDigest)
+		if err != nil {
+			return fmt.Errorf("unable to determine digest derivation (%s)", err)
+		}
+
+		current := l.Current()
+		curSerialized, err := current.Serialize()
+		if err != nil {
+			return fmt.Errorf("unable to serialize current event (%s)", err)
+		}
+
+		curDigest, err := event.Digest(curSerialized, inDerivation.Code)
+		if err != nil {
+			return fmt.Errorf("unable to digest current event (%s)", err)
+		}
+
+		if !bytes.Equal(curDigest, inDerivation.Raw) {
+			// someone has tried to add an invalid event to the log
+			_ = l.db.EscrowLikelyDuplicitiousEvent(e)
+			return errors.New("invalid digest for new event")
+		}
+
+		err = l.validateSigs(state, e)
 		if err != nil {
 			return err
 		}

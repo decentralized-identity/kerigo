@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/decentralized-identity/kerigo/pkg/db/mem"
+	"github.com/decentralized-identity/kerigo/pkg/encoding/stream"
 	"github.com/decentralized-identity/kerigo/pkg/event"
 	testkms "github.com/decentralized-identity/kerigo/pkg/test/kms"
 )
@@ -105,6 +106,7 @@ func TestDirectMode(t *testing.T) {
 		//Send bob's icp to Eve and get back icp and receipt
 		msgsToBob, err := eve.ProcessEvents(icp)
 		assert.NoError(t, err)
+		assert.Len(t, msgsToBob, 1)
 
 		eveICP, err := eve.Inception()
 		assert.NoError(t, err)
@@ -115,6 +117,7 @@ func TestDirectMode(t *testing.T) {
 		msgsToEve, err := bob.ProcessEvents(msgsToBob...)
 
 		rcpt := <-rcpts
+
 		dig, err := icp.Event.GetDigest()
 		assert.NoError(t, err)
 		assert.Equal(t, rcpt.EventDigest, dig)
@@ -147,7 +150,7 @@ func TestInteractionEvent(t *testing.T) {
 	assert.NoError(t, err)
 
 	ixn, err := k.Interaction([]*event.Seal{})
-	d, err := ixn.Serialize()
+	d, err := stream.ToDisjoint(ixn)
 	assert.NoError(t, err)
 
 	assert.Equal(t, expectedBytes, string(d))

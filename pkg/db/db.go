@@ -1,7 +1,6 @@
 package db
 
 import (
-	"github.com/decentralized-identity/kerigo/pkg/derivation"
 	"github.com/decentralized-identity/kerigo/pkg/event"
 )
 
@@ -10,7 +9,8 @@ type DB interface {
 	Get(k string) ([]byte, error)
 
 	LogEvent(e *event.Message, first bool) error
-	LogTransferableReceipt(vrc *event.Event, sig derivation.Derivation) error
+	LogTransferableReceipt(vrc *event.Receipt) error
+	LogNonTransferableReceipt(rct *event.Receipt) error
 
 	EscrowPendingEvent(e *event.Message) error
 	RemovePendingEscrow(prefix string, sn int, dig string) error
