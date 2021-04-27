@@ -39,12 +39,13 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	defer remoteTempDir(td)
+	defer removeTempDir(td)
 
 	db, err := kbdgr.New(td)
 	if err != nil {
 		panic(err)
 	}
+	defer db.Close()
 
 	kh, err := keyset.NewHandle(aead.AES256GCMKeyTemplate())
 	if err != nil {
@@ -115,7 +116,7 @@ func main() {
 	}
 }
 
-func remoteTempDir(td string) {
+func removeTempDir(td string) {
 	err := os.RemoveAll(td)
 	if err != nil {
 		fmt.Println(err)
