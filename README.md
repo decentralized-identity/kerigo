@@ -1,4 +1,7 @@
-# KERIGO
+# The KERI Working Group is no longer active under DIF. Ongoing KERI work has moved to the [Web of Trust GitHub repository](https://github.com/WebOfTrust/keri).
+#
+
+# KERIGO (archived at DIF)
 Go implementation of KERI  (Key Event Receipt Infrastructure)
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://raw.githubusercontent.com/decentralized-identity/kerigo/master/LICENSE)
